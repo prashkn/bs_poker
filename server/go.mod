@@ -1,4 +1,4 @@
-module github.com/prashkn/bs-poker
+module github.com/prashkn/bs-poker/server
 
 go 1.25.0
 
