@@ -1,2 +1,8 @@
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/wordgen/wordlists v0.3.0 h1:Q9xIl5506DIvNy3INC6Q+4KQwjfczzh/PZye4Tkkw3c=
+github.com/wordgen/wordlists v0.3.0/go.mod h1:M74rW8w0qhadSpPYkCx/rBWWQWEXKCP4VFLaUEhrLs8=
+github.com/wordgen/wordlists/eff v0.3.0 h1:rYCBa4ntXBHDkuu904KCejK+alZsz4+Aue539pXsghE=
+github.com/wordgen/wordlists/eff v0.3.0/go.mod h1:hsLXGcWdZhzUQ9QXCMrXHl4euoclcCadzhQe2ERLL6w=
+github.com/wordgen/wordlists/names v0.3.0 h1:C0MOiqGisPE/KLabX4ZpJnmztF226xSlAbM++Z7anZc=
+github.com/wordgen/wordlists/names v0.3.0/go.mod h1:qpt/50GQaDbuQk+nXs0EuEdVcTywAcL6eDRrD4vikHY=
