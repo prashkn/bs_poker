@@ -11,23 +11,28 @@ import (
 )
 
 type joinRoomRequest struct {
-	RoomID   string `json:"room_id"`
-	Password string `json:"password"`
-	UserName string `json:"user_name"`
+	RoomID     string `json:"room_id"`
+	Password   string `json:"password"`
+	PlayerName string `json:"player_name"`
 }
 
 type joinRoomResponse struct {
-	PlayerID string `json:"player_id"`
-	RoomID   string `json:"room_id"`
+	RoomID   string    `json:"room_id"`
+	PlayerID uuid.UUID `json:"player_id"`
 }
 
-func handleJoinRoom(registry *service.RoomRegistry) http.HandlerFunc {
+// handleJoinRoom adds a player to an existing room.
+func handleJoinRoom(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req joinRoomRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
+
+		log.Printf("join request: %+v", req)
+
+		// validation
 		if req.RoomID == "" {
 			http.Error(w, "room_id is required", http.StatusBadRequest)
 			return
@@ -36,33 +41,30 @@ func handleJoinRoom(registry *service.RoomRegistry) http.HandlerFunc {
 			http.Error(w, "password is required", http.StatusBadRequest)
 			return
 		}
-		if req.UserName == "" {
-			http.Error(w, "user_name is required", http.StatusBadRequest)
+		if req.PlayerName == "" {
+			http.Error(w, "player_name is required", http.StatusBadRequest)
 			return
 		}
 
-		room, ok := registry.Get(req.RoomID)
-		if !ok {
+		room, err := registry.GetRoom(req.RoomID)
+		if err != nil || room.Password != req.Password {
+			// Don't reveal whether the room exists or not if the password is wrong.
 			http.Error(w, "room not found", http.StatusNotFound)
 			return
 		}
 
-		if room.Password != req.Password {
-			http.Error(w, "incorrect password", http.StatusUnauthorized)
+		player := models.NewPlayer(req.PlayerName)
+		err = registry.AddPlayerToRoom(room.ID, player)
+		if err != nil {
+			if err == service.ErrPlayerNameTaken {
+				http.Error(w, "player name already taken in this room", http.StatusConflict)
+				return
+			}
+			http.Error(w, "failed to add player to room", http.StatusInternalServerError)
 			return
 		}
 
-		playerID := uuid.New()
-		player := &models.Player{
-			ID:      playerID,
-			Name:    req.UserName,
-			Room:    room,
-			IsAlive: true,
-		}
-		room.Players = append(room.Players, player)
-		log.Printf("player %s (%s) joined room %s", req.UserName, playerID, req.RoomID)
-
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(joinRoomResponse{PlayerID: playerID.String(), RoomID: req.RoomID})
+		json.NewEncoder(w).Encode(joinRoomResponse{RoomID: req.RoomID, PlayerID: player.ID})
 	}
 }

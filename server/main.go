@@ -9,13 +9,13 @@ import (
 func main() {
 	server := NewServer()
 
-	// Background goroutine to delete empty rooms every 30s.
-	go server.roomRegistry.CleanupEmptyRooms(30 * time.Second)
+	// Background goroutine to delete empty rooms every 30m.
+	go server.roomRegistryService.CleanupEmptyRooms(30 * time.Minute)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/rooms", handleCreateRoom(server.roomService))
-	mux.HandleFunc("POST /api/rooms/join", handleJoinRoom(server.roomRegistry))
-	mux.HandleFunc("GET /ws/{roomID}", handleWebSocket(server.roomRegistry))
+	mux.HandleFunc("POST /api/rooms", handleCreateRoom(server.roomRegistryService))
+	mux.HandleFunc("POST /api/rooms/join", handleJoinRoom(server.roomRegistryService))
+	mux.HandleFunc("GET /ws/{roomID}", handleWebSocket(server.roomRegistryService))
 
 	addr := ":8080"
 	log.Printf("server listening on %s", addr)

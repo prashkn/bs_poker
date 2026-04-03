@@ -32,9 +32,28 @@ export default function Home() {
       setError("All fields are required to join.");
       return;
     }
-    navigate(
-      `/rooms/${joinRoomId}?name=${encodeURIComponent(joinName)}&password=${encodeURIComponent(joinPassword)}`
-    );
+    try {
+      const res = await fetch("/api/rooms/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room_id: joinRoomId,
+          password: joinPassword,
+          player_name: joinName,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        setError(text || "Failed to join room.");
+        return;
+      }
+      const data = await res.json();
+      navigate(
+        `/rooms/${data.room_id}?player_id=${data.player_id}`
+      );
+    } catch {
+      setError("Failed to join room.");
+    }
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -60,7 +79,7 @@ export default function Home() {
       }
       const data = await res.json();
       navigate(
-        `/rooms/${data.room_id}?name=${encodeURIComponent(createName)}&password=${encodeURIComponent(createPassword)}&host_id=${data.host_id}`
+        `/rooms/${data.room_id}?player_id=${data.player_id}`
       );
     } catch {
       setError("Failed to create room.");

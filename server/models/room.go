@@ -7,8 +7,8 @@ import (
 )
 
 type Room struct {
-	ID        string       `json:"id"`
-	Password  string       `json:"password,omitempty"`
+	ID        string       `json:"id"` // human-readable ID, "blue-tiger-boat"
+	Password  string       `json:"password"`
 	HostID    uuid.UUID    `json:"host_id"`
 	Players   []*Player    `json:"players"`
 	Settings  RoomSettings `json:"room_settings"`
@@ -19,14 +19,6 @@ type Room struct {
 type RoomSettings struct {
 	TimePerTurn               time.Duration `json:"time_per_turn"`
 	MaxCardsBeforeElimination int           `json:"max_cards_before_elimination"`
-}
-
-type Player struct {
-	ID      uuid.UUID `json:"id"`
-	Name    string    `json:"name"`
-	Room    *Room     `json:"room,omitempty"`
-	Hand    []Card    `json:"hand,omitempty"`
-	IsAlive bool      `json:"is_alive"`
 }
 
 type Game struct {

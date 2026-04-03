@@ -5,19 +5,13 @@ import (
 )
 
 type server struct {
-	roomRegistry  service.RoomRegistryService
-	playerService service.PlayerService
-	roomService   service.RoomService
+	roomRegistryService service.RoomRegistryService
 }
 
 func NewServer() *server {
-	registry := service.NewRoomRegistry()
-	roomService := service.NewRoomService()
-	playerService := service.NewPlayerService()
+	registry := service.NewRoomRegistryService()
 
 	return &server{
-		roomRegistry:  registry,
-		playerService: playerService,
-		roomService:   roomService,
+		roomRegistryService: registry,
 	}
 }
