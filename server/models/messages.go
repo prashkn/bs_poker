@@ -1,8 +1,8 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,30 +36,27 @@ const (
 )
 
 type Message struct {
-	ID        uuid.UUID    `json:"id"`
-	Event     MessageEvent `json:"message_event"`
-	Content   string       `json:"content"`
-	CreatedAt time.Time    `json:"created_at"`
+	ID        uuid.UUID              `json:"id"`
+	Event     MessageEvent           `json:"event"`
+	Payload   map[string]interface{} `json:"-"`
+	CreatedAt time.Time              `json:"created_at"`
 }
 
-func ParseMessage(s string) (*Message, error) {
-	// messages formated as following {type}:{content}
-	split := strings.SplitN(s, ":", 3)
-	if len(split) < 2 {
-		return nil, errors.New("invalid messsage format")
+func ParseMessage(data []byte) (*Message, error) {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, errors.New("invalid JSON message")
 	}
 
-	id, _ := uuid.NewUUID()
-	created_at := time.Now()
-	event := MessageEvent(split[0])
-	content := split[1]
-
-	message := &Message{
-		ID:        id,
-		Event:     event,
-		Content:   content,
-		CreatedAt: created_at,
+	event, ok := raw["event"].(string)
+	if !ok || event == "" {
+		return nil, errors.New("missing or invalid 'event' field")
 	}
 
-	return message, nil
+	return &Message{
+		ID:        uuid.New(),
+		Event:     MessageEvent(event),
+		Payload:   raw,
+		CreatedAt: time.Now(),
+	}, nil
 }

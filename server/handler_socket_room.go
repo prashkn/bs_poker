@@ -56,11 +56,11 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 		roomID := r.PathValue("roomID")
 		playerIDStr := r.URL.Query().Get("player_id")
 
+		// Validation
 		if playerIDStr == "" {
 			http.Error(w, "player_id is required", http.StatusBadRequest)
 			return
 		}
-
 		playerID, err := uuid.Parse(playerIDStr)
 		if err != nil {
 			http.Error(w, "invalid player_id", http.StatusBadRequest)
@@ -72,7 +72,6 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 			http.Error(w, "room not found", http.StatusNotFound)
 			return
 		}
-
 		player, err := registry.GetPlayerInRoom(roomID, playerID)
 		if err != nil {
 			http.Error(w, "player not found in room", http.StatusNotFound)
@@ -84,7 +83,6 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 			log.Printf("websocket upgrade failed: %v", err)
 			return
 		}
-
 		player.Conn = conn
 
 		// Send room_state to the connecting player
@@ -173,6 +171,24 @@ func readPump(player *models.Player, room *models.Room, registry service.RoomReg
 		}
 
 		log.Printf("received from player %s: %s", player.ID, string(msg))
-		// TODO: parse message and handle game events (claim, call_bs, chat, etc.)
+
+		message, err := models.ParseMessage(msg)
+		if err != nil {
+			log.Printf("failed to parse message from player %s: %v", player.ID, err)
+			continue
+		}
+
+		if message.Event == models.MessageTypeChat {
+			chatMsg := map[string]interface{}{
+				"type":      string(models.MessageTypeChatReceived),
+				"player_id": player.ID.String(),
+				"name":      player.Name,
+				"text":      message.Payload["text"],
+			}
+			if broadcastMsg, err := json.Marshal(chatMsg); err == nil {
+				broadcastToRoom(room, broadcastMsg, player.ID)
+			}
+		}
+
 	}
 }

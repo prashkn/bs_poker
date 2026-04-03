@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 export interface WSMessage {
-  type: string;
+  event: string;
   [key: string]: unknown;
 }
 

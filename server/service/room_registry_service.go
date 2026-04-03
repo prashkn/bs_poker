@@ -98,6 +98,11 @@ func (r *roomRegistryService) AddPlayerToRoom(roomID string, player *models.Play
 		}
 	}
 
+	// if there are no players, this player becomes the host
+	if len(room.Players) == 0 {
+		room.HostID = player.ID
+	}
+
 	room.Players = append(room.Players, player)
 	return nil
 }

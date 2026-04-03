@@ -1,12 +1,17 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { CopyIcon } from "lucide-react"
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { toast } from "sonner";
 
 interface PlayerInfo {
   id: string;
@@ -17,15 +22,28 @@ export default function Room() {
   const { id: roomId } = useParams<{ id: string }>();
   const playerId = sessionStorage.getItem("player_id") ?? "";
 
-  const { messages, log, connected } = useWebSocket(roomId ?? "", playerId);
+  const { messages, log, connected, send } = useWebSocket(roomId ?? "", playerId);
+  const [chatInput, setChatInput] = useState("");
+  interface ChatEntry { name: string; text: string; isMe: boolean }
+  const [localChat, setLocalChat] = useState<ChatEntry[]>([]);
 
-  // Build current player list from messages
-  const players = useMemo(() => {
+  function handleSendChat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+    send({ event: "chat", text: chatInput.trim() });
+    setLocalChat((prev) => [...prev, { name: "you", text: chatInput.trim(), isMe: true }]);
+    setChatInput("");
+  }
+
+  // Build current player list and track host
+  const { players, hostId } = useMemo(() => {
     const playerMap = new Map<string, PlayerInfo>();
+    let hostId = "";
 
     for (const msg of messages) {
       if (msg.type === "room_state") {
         playerMap.clear();
+        hostId = msg.host_id as string;
         const list = msg.players as PlayerInfo[];
         for (const p of list) {
           playerMap.set(p.id, p);
@@ -37,10 +55,28 @@ export default function Room() {
         });
       } else if (msg.type === "player_left") {
         playerMap.delete(msg.player_id as string);
+      } else if (msg.type === "host_changed") {
+        hostId = msg.player_id as string;
       }
     }
 
-    return Array.from(playerMap.values());
+    return { players: Array.from(playerMap.values()), hostId };
+  }, [messages]);
+
+  // Append incoming chat messages to localChat
+  const lastProcessed = useRef(0);
+  useEffect(() => {
+    const newMessages = messages.slice(lastProcessed.current);
+    lastProcessed.current = messages.length;
+    for (const msg of newMessages) {
+      if (msg.type === "chat_received") {
+        setLocalChat((prev) => [...prev, {
+          name: msg.name as string,
+          text: msg.text as string,
+          isMe: false,
+        }]);
+      }
+    }
   }, [messages]);
 
   return (
@@ -48,6 +84,17 @@ export default function Room() {
       <h1 className="mb-2 text-4xl font-bold text-foreground">BS Poker</h1>
       <p className="mb-6 text-muted-foreground">
         Room: <span className="font-mono font-semibold text-foreground">{roomId}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="ml-1 h-6 w-6"
+          onClick={() => {
+            navigator.clipboard.writeText(roomId ?? "");
+            toast.success("Room Code copied", { position: 'top-center' }); 
+          }}
+        >
+          <CopyIcon className="h-3.5 w-3.5" />
+        </Button>
       </p>
 
       <div className="mb-4 text-sm">
@@ -75,6 +122,7 @@ export default function Room() {
                   >
                     <span className="h-2 w-2 rounded-full bg-green-500" />
                     {p.name}
+                    {p.id === hostId && <span title="Host">👑</span>}
                     {p.id === playerId && (
                       <span className="text-xs text-muted-foreground">(you)</span>
                     )}
@@ -115,6 +163,42 @@ export default function Room() {
               )}
             </div>
           </CardContent>
+        </Card>
+
+        <Card className="w-140 flex flex-col">
+          <CardHeader>
+            <CardTitle>Chat</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1">
+            <div className="flex flex-col gap-1 max-h-80 overflow-y-auto">
+              {localChat.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No messages yet...</p>
+              ) : (
+                localChat.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`text-sm ${msg.isMe ? "text-right" : "text-left"}`}
+                  >
+                    <span className="font-semibold text-foreground">{msg.name}</span>
+                    <span className="text-muted-foreground"> {msg.text}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+          <CardFooter>
+            <form onSubmit={handleSendChat} className="flex w-full gap-2">
+              <Input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Type a message..."
+                disabled={!connected}
+              />
+              <Button type="submit" disabled={!connected || !chatInput.trim()}>
+                Send
+              </Button>
+            </form>
+          </CardFooter>
         </Card>
       </div>
     </div>
