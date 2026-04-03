@@ -31,6 +31,7 @@ const (
 	MessageTypeChatReceived     MessageEvent = "chat_received"
 	MessageTypeSettingsUpdated  MessageEvent = "settings_updated"
 	MessageTypeErrorMessage     MessageEvent = "error_message"
+	MessageTypePlayerLeft       MessageEvent = "player_left"
 	MesssageTypeHostChanged     MessageEvent = "host_changed"
 )
 

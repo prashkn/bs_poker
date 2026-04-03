@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -12,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useCreateRoom, useJoinRoom } from "@/api/room";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -23,117 +25,94 @@ export default function Home() {
   const [createPassword, setCreatePassword] = useState("");
   const [createName, setCreateName] = useState("");
 
-  const [error, setError] = useState("");
+  const createRoom = useCreateRoom();
+  const joinRoom = useJoinRoom();
 
-  async function handleJoin(e: React.FormEvent) {
+  function handleJoin(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     if (!joinRoomId || !joinPassword || !joinName) {
-      setError("All fields are required to join.");
+      toast.error("All fields are required to join.", { position: "top-center" });
       return;
     }
-    try {
-      const res = await fetch("/api/rooms/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          room_id: joinRoomId,
-          password: joinPassword,
-          player_name: joinName,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(text || "Failed to join room.");
-        return;
+    joinRoom.mutate(
+      { room_id: joinRoomId, password: joinPassword, player_name: joinName },
+      {
+        onSuccess: (data) => {
+          sessionStorage.setItem("player_id", data.player_id);
+          navigate(`/rooms/${data.room_id}`);
+        },
+        onError: () => {
+          toast.error("Error joining room.", { position: "top-center" });
+        },
       }
-      const data = await res.json();
-      navigate(
-        `/rooms/${data.room_id}?player_id=${data.player_id}`
-      );
-    } catch {
-      setError("Failed to join room.");
-    }
+    );
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     if (!createPassword || !createName) {
-      setError("All fields are required to create a room.");
+      toast.error("All fields are required to create a room.", { position: "top-center" });
       return;
     }
-    try {
-      const res = await fetch("/api/rooms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password: createPassword,
-          host_name: createName,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(text || "Failed to create room.");
-        return;
+    createRoom.mutate(
+      { password: createPassword, host_name: createName },
+      {
+        onSuccess: (data) => {
+          sessionStorage.setItem("player_id", data.player_id);
+          navigate(`/rooms/${data.room_id}`);
+        },
+        onError: () => {
+          toast.error("Error creating room.", { position: "top-center" });
+        },
       }
-      const data = await res.json();
-      navigate(
-        `/rooms/${data.room_id}?player_id=${data.player_id}`
-      );
-    } catch {
-      setError("Failed to create room.");
-    }
+    );
   }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
       <h1 className="mb-10 text-5xl font-bold text-foreground">BS Poker</h1>
 
-      {error && (
-        <p className="mb-4 text-sm text-destructive">{error}</p>
-      )}
-
-      <div className="flex items-stretch gap-8">
-        <Card className="w-72">
-          <form onSubmit={handleJoin}>
+      <div className="flex items-stretch gap-2">
+        <Card className="w-100 min-w-100">
+          <form className="flex flex-col h-full" onSubmit={handleJoin}>
             <CardHeader>
               <CardTitle>Join Room</CardTitle>
-              <CardDescription>Enter a room code to join an existing game.</CardDescription>
+              <CardDescription>Enter a room code to join a game.</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="join-room-id">Room ID</Label>
+            <CardContent className="flex flex-col gap-4 flex-1">
+              <Field>
+                <FieldLabel htmlFor="join-room-code" required>Room Code</FieldLabel>
                 <Input
-                  id="join-room-id"
-                  placeholder="e.g. a1b2c3d4"
+                  id="join-room-code"
+                  placeholder="blue-rabbit-truck"
                   value={joinRoomId}
+                  required
                   onChange={(e) => setJoinRoomId(e.target.value)}
                 />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="join-password">Password</Label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="join-password" required>Password</FieldLabel>
                 <Input
                   id="join-password"
                   type="password"
-                  placeholder="Room password"
                   value={joinPassword}
+                  required
                   onChange={(e) => setJoinPassword(e.target.value)}
                 />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="join-name">Your Name</Label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="join-name" required>Name</FieldLabel>
                 <Input
                   id="join-name"
-                  placeholder="Display name"
                   value={joinName}
+                  required
                   onChange={(e) => setJoinName(e.target.value)}
                 />
-              </div>
+              </Field>
             </CardContent>
             <CardFooter>
-              <Button type="submit" className="w-full">
-                Join
+              <Button type="submit" className="w-full" disabled={joinRoom.isPending}>
+                {joinRoom.isPending ? "Joining..." : "Join"}
               </Button>
             </CardFooter>
           </form>
@@ -141,36 +120,36 @@ export default function Home() {
 
         <Separator orientation="vertical" />
 
-        <Card className="w-72">
-          <form onSubmit={handleCreate}>
+        <Card className="w-100 min-w-100">
+          <form className="flex flex-col h-full" onSubmit={handleCreate}>
             <CardHeader>
               <CardTitle>Create Room</CardTitle>
               <CardDescription>Start a new room and invite friends.</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="create-password">Password</Label>
+            <CardContent className="flex flex-col gap-4 flex-1">
+              <Field>
+                <FieldLabel htmlFor="create-password" required>Password</FieldLabel>
                 <Input
                   id="create-password"
                   type="password"
-                  placeholder="Room password"
                   value={createPassword}
+                  required
                   onChange={(e) => setCreatePassword(e.target.value)}
                 />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="create-name">Your Name</Label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="create-name" required>Name</FieldLabel>
                 <Input
                   id="create-name"
-                  placeholder="Display name"
                   value={createName}
+                  required
                   onChange={(e) => setCreateName(e.target.value)}
                 />
-              </div>
+              </Field>
             </CardContent>
             <CardFooter>
-              <Button type="submit" className="w-full">
-                Create
+              <Button type="submit" className="w-full" disabled={createRoom.isPending}>
+                {createRoom.isPending ? "Creating..." : "Create"}
               </Button>
             </CardFooter>
           </form>

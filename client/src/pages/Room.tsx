@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
   Card,
@@ -15,10 +15,9 @@ interface PlayerInfo {
 
 export default function Room() {
   const { id: roomId } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
-  const playerId = searchParams.get("player_id") ?? "";
+  const playerId = sessionStorage.getItem("player_id") ?? "";
 
-  const { messages, connected } = useWebSocket(roomId ?? "", playerId);
+  const { messages, log, connected } = useWebSocket(roomId ?? "", playerId);
 
   // Build current player list from messages
   const players = useMemo(() => {
@@ -59,31 +58,65 @@ export default function Room() {
         )}
       </div>
 
-      <Card className="w-72">
-        <CardHeader>
-          <CardTitle>Players ({players.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {players.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Waiting for players...</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {players.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center gap-2 text-sm text-foreground"
-                >
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
-                  {p.name}
-                  {p.id === playerId && (
-                    <span className="text-xs text-muted-foreground">(you)</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex gap-4">
+        <Card className="w-72">
+          <CardHeader>
+            <CardTitle>Players ({players.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {players.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Waiting for players...</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {players.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex items-center gap-2 text-sm text-foreground"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                    {p.name}
+                    {p.id === playerId && (
+                      <span className="text-xs text-muted-foreground">(you)</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="w-120">
+          <CardHeader>
+            <CardTitle>WebSocket Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-1 max-h-96 overflow-y-auto font-mono text-xs">
+              {log.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No messages yet...</p>
+              ) : (
+                log.map((entry, i) => (
+                  <div
+                    key={i}
+                    className={
+                      entry.direction === "incoming"
+                        ? "text-red-400"
+                        : "text-green-400"
+                    }
+                  >
+                    <span className="text-muted-foreground">
+                      {new Date(entry.timestamp).toLocaleTimeString()}{" "}
+                    </span>
+                    <span>
+                      {entry.direction === "incoming" ? "◀ IN " : "▶ OUT "}
+                    </span>
+                    {JSON.stringify(entry.message)}
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -35,6 +35,7 @@ type RoomRegistryService interface {
 	CreateRoom(password string) *models.Room
 	DeleteRoom(id string)
 	AddPlayerToRoom(roomID string, player *models.Player) error
+	RemovePlayerFromRoom(roomID string, playerID uuid.UUID) error
 	GetPlayerInRoom(roomID string, playerID uuid.UUID) (*models.Player, error)
 	CleanupEmptyRooms(interval time.Duration)
 }
@@ -99,6 +100,31 @@ func (r *roomRegistryService) AddPlayerToRoom(roomID string, player *models.Play
 
 	room.Players = append(room.Players, player)
 	return nil
+}
+
+func (r *roomRegistryService) RemovePlayerFromRoom(roomID string, playerID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	room, ok := r.rooms[roomID]
+	if !ok {
+		return ErrRoomNotFound
+	}
+
+	for i, p := range room.Players {
+		if p.ID == playerID {
+			room.Players = append(room.Players[:i], room.Players[i+1:]...)
+
+			// If the leaving player was the host and there are remaining players, migrate host.
+			if room.HostID == playerID && len(room.Players) > 0 {
+				room.HostID = room.Players[0].ID
+			}
+
+			return nil
+		}
+	}
+
+	return ErrPlayerNotFound
 }
 
 func (r *roomRegistryService) GetPlayerInRoom(roomID string, playerID uuid.UUID) (*models.Player, error) {

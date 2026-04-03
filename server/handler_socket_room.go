@@ -17,6 +17,40 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+func handlePlayerDisconnect(player *models.Player, room *models.Room, registry service.RoomRegistryService) {
+	playerID := player.ID
+	wasHost := room.HostID == playerID
+
+	// Build broadcast messages before removing, so we don't race on room.Players
+	leftMsg, _ := json.Marshal(map[string]interface{}{
+		"type":      string(models.MessageTypePlayerLeft),
+		"player_id": playerID.String(),
+	})
+
+	// Broadcast to remaining players (the departing player is still in the list but excluded)
+	broadcastToRoom(room, leftMsg, playerID)
+
+	// Now remove the player
+	err := registry.RemovePlayerFromRoom(room.ID, playerID)
+	if err != nil {
+		log.Printf("failed to remove player %s from room %s: %v", playerID, room.ID, err)
+		return
+	}
+
+	// If the departing player was the host, notify remaining players of the new host
+	if wasHost && len(room.Players) > 0 {
+		hostChanged := map[string]interface{}{
+			"type":      string(models.MesssageTypeHostChanged),
+			"player_id": room.HostID.String(),
+		}
+		if msg, err := json.Marshal(hostChanged); err == nil {
+			broadcastToRoom(room, msg, uuid.Nil)
+		}
+	}
+
+	log.Printf("player %s left room %s (%d players remaining)", playerID, room.ID, len(room.Players))
+}
+
 func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roomID := r.PathValue("roomID")
@@ -71,7 +105,7 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 
 		// Start read/write pumps
 		go writePump(player)
-		go readPump(player, room)
+		go readPump(player, room, registry)
 	}
 }
 
@@ -96,12 +130,15 @@ func buildRoomState(room *models.Room) map[string]interface{} {
 
 // broadcastToRoom sends a message to all players in the room except the excluded player.
 func broadcastToRoom(room *models.Room, msg []byte, excludePlayerID uuid.UUID) {
+	log.Printf("broadcasting to room %s (%d players), excluding %s: %s", room.ID, len(room.Players), excludePlayerID, string(msg))
 	for _, p := range room.Players {
 		if p.ID == excludePlayerID || p.Conn == nil {
+			log.Printf("skipping player %s (excluded=%v, conn_nil=%v)", p.ID, p.ID == excludePlayerID, p.Conn == nil)
 			continue
 		}
 		select {
 		case p.SendCh <- msg:
+			log.Printf("sent message to player %s", p.ID)
 		default:
 			log.Printf("send channel full for player %s, dropping message", p.ID)
 		}
@@ -121,8 +158,9 @@ func writePump(player *models.Player) {
 }
 
 // readPump reads messages from the WebSocket connection and handles them.
-func readPump(player *models.Player, room *models.Room) {
+func readPump(player *models.Player, room *models.Room, registry service.RoomRegistryService) {
 	defer func() {
+		handlePlayerDisconnect(player, room, registry)
 		player.Conn.Close()
 		close(player.SendCh)
 	}()
