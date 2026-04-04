@@ -60,6 +60,7 @@ const (
 
 /*
 MadeHand Contract:
+A made hand is a part of the claim
 A made hand must consist of all cards that comprise of the made hand.
 ie. if my made hand claim is a two pair of 5s and 9s, then I must supply all 4 cards.
 ie. if my made hand claim is a 3 of kind of 7s, then I must supply all 3 cards.
