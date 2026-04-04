@@ -1,4 +1,5 @@
 import { XIcon } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,6 +10,10 @@ import {
 } from "@/components/ui/card";
 import type { PlayerState } from "@/types";
 import type { WSMessage } from "@/hooks/useWebSocket";
+
+function avatarUrl(seed: string) {
+  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
+}
 
 interface PlayerListProps {
   players: PlayerState[];
@@ -36,7 +41,10 @@ export default function PlayerList({ players, hostId, playerId, connected, send 
                 key={p.id}
                 className="flex items-center gap-2 text-sm text-foreground"
               >
-                <span className="h-2 w-2 rounded-full bg-green-500" />
+                <Avatar className="h-6 w-6">
+                  <AvatarImage src={avatarUrl(p.id)} alt={p.name} />
+                  <AvatarFallback>{p.name[0]?.toUpperCase()}</AvatarFallback>
+                </Avatar>
                 {p.name}
                 {p.id === hostId && <span title="Host">👑</span>}
                 {p.id === playerId && (
