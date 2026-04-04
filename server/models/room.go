@@ -1,12 +1,14 @@
 package models
 
 import (
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type Room struct {
+	Mu        sync.Mutex   `json:"-"`
 	ID        string       `json:"id"` // human-readable ID, "blue-tiger-boat"
 	Password  string       `json:"password"`
 	HostID    uuid.UUID    `json:"host_id"`
