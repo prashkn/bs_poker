@@ -38,7 +38,7 @@ export default function Home() {
       { room_id: joinRoomId, password: joinPassword, player_name: joinName },
       {
         onSuccess: (data) => {
-          sessionStorage.setItem("player_id", data.player_id);
+          sessionStorage.setItem(`player_id:${data.room_id}`, data.player_id);
           navigate(`/rooms/${data.room_id}`);
         },
         onError: () => {
@@ -58,7 +58,7 @@ export default function Home() {
       { password: createPassword, host_name: createName },
       {
         onSuccess: (data) => {
-          sessionStorage.setItem("player_id", data.player_id);
+          sessionStorage.setItem(`player_id:${data.room_id}`, data.player_id);
           navigate(`/rooms/${data.room_id}`);
         },
         onError: () => {

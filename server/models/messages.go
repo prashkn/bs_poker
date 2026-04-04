@@ -3,23 +3,25 @@ package models
 import (
 	"encoding/json"
 	"errors"
-	"time"
-
-	"github.com/google/uuid"
 )
 
-// MessageEvent is the type of message being sent via websocket
+// MessageEvent is the type of ws message
 type MessageEvent string
 
 const (
-	MessageTypeClaim            MessageEvent = "claim"
-	MessageTypeCallBS           MessageEvent = "call_bs"
-	MessageTypeChat             MessageEvent = "chat"
-	MessageTypeStartGame        MessageEvent = "start_game"
-	MessageTypeKickPlayer       MessageEvent = "kick_player"
-	MessageTypeUpdateSettings   MessageEvent = "update_settings"
+	// Client -> Server
+	MessageTypeChat           MessageEvent = "chat"
+	MessageTypeStartGame      MessageEvent = "start_game"
+	MessageTypeClaim          MessageEvent = "claim"
+	MessageTypeCallBS         MessageEvent = "call_bs"
+	MessageTypeKickPlayer     MessageEvent = "kick_player"
+	MessageTypeUpdateSettings MessageEvent = "update_settings"
+
+	// Server -> Client
 	MessageTypeRoomState        MessageEvent = "room_state"
 	MessageTypePlayerJoined     MessageEvent = "player_joined"
+	MessageTypePlayerLeft       MessageEvent = "player_left"
+	MesssageTypeHostChanged     MessageEvent = "host_changed"
 	MessageTypeGameStarted      MessageEvent = "game_started"
 	MessageTypeTurn             MessageEvent = "turn"
 	MessageTypeClaimMade        MessageEvent = "claim_made"
@@ -31,32 +33,52 @@ const (
 	MessageTypeChatReceived     MessageEvent = "chat_received"
 	MessageTypeSettingsUpdated  MessageEvent = "settings_updated"
 	MessageTypeErrorMessage     MessageEvent = "error_message"
-	MessageTypePlayerLeft       MessageEvent = "player_left"
-	MesssageTypeHostChanged     MessageEvent = "host_changed"
 )
 
-type Message struct {
-	ID        uuid.UUID              `json:"id"`
-	Event     MessageEvent           `json:"event"`
-	Payload   map[string]interface{} `json:"-"`
-	CreatedAt time.Time              `json:"created_at"`
+// RawMessage is the routing envelope — extract the event, keep raw payload bytes for per-handler decoding.
+type RawMessage struct {
+	Event   MessageEvent    `json:"event"`
+	Payload json.RawMessage `json:"payload"`
 }
 
-func ParseMessage(data []byte) (*Message, error) {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
+// ParseMessage extracts the event and payload fields from a WebSocket message.
+func ParseMessage(data []byte) (*RawMessage, error) {
+	var msg RawMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
 		return nil, errors.New("invalid JSON message")
 	}
-
-	event, ok := raw["event"].(string)
-	if !ok || event == "" {
+	if msg.Event == "" {
 		return nil, errors.New("missing or invalid 'event' field")
 	}
 
-	return &Message{
-		ID:        uuid.New(),
-		Event:     MessageEvent(event),
-		Payload:   raw,
-		CreatedAt: time.Now(),
-	}, nil
+	return &msg, nil
+}
+
+// NewMessage builds a JSON-encoded message with the standard { event, payload } structure.
+func NewMessage(event MessageEvent, payload any) ([]byte, error) {
+	return json.Marshal(struct {
+		Event   MessageEvent `json:"event"`
+		Payload any          `json:"payload"`
+	}{
+		Event:   event,
+		Payload: payload,
+	})
+}
+
+// Client -> Server payloads
+
+type ChatPayload struct {
+	Text string `json:"text"`
+}
+
+type ClaimPayload struct {
+	Hand string `json:"hand"` // TODO: replace with HandRank type once game engine is built
+}
+
+type KickPayload struct {
+	PlayerID string `json:"player_id"`
+}
+
+type UpdateSettingsPayload struct {
+	Settings RoomSettings `json:"settings"`
 }

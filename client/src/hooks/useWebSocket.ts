@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 export interface WSMessage {
   event: string;
-  [key: string]: unknown;
+  payload: Record<string, unknown>;
 }
 
 export type Direction = "incoming" | "outgoing";

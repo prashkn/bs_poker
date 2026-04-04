@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { CopyIcon } from "lucide-react"
+import { useNavigate, useParams } from "react-router-dom";
+import { CopyIcon, XIcon } from "lucide-react"
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useGetRoom } from "@/api/room";
+import JoinRoomModal from "@/components/JoinRoomModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,7 +22,18 @@ interface PlayerInfo {
 
 export default function Room() {
   const { id: roomId } = useParams<{ id: string }>();
-  const playerId = sessionStorage.getItem("player_id") ?? "";
+  const navigate = useNavigate();
+  const [playerId, setPlayerId] = useState(() => sessionStorage.getItem(`player_id:${roomId}`) ?? "");
+  const needsJoin = !playerId;
+
+  const { isLoading, isError } = useGetRoom(roomId ?? "");
+
+  useEffect(() => {
+    if (isError) {
+      toast.error("Room not found.", { position: "top-center" });
+      navigate("/", { replace: true });
+    }
+  }, [isError, navigate]);
 
   const { messages, log, connected, send } = useWebSocket(roomId ?? "", playerId);
   const [chatInput, setChatInput] = useState("");
@@ -30,7 +43,7 @@ export default function Room() {
   function handleSendChat(e: React.FormEvent) {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    send({ event: "chat", text: chatInput.trim() });
+    send({ event: "chat", payload: { text: chatInput.trim() } });
     setLocalChat((prev) => [...prev, { name: "you", text: chatInput.trim(), isMe: true }]);
     setChatInput("");
   }
@@ -41,22 +54,23 @@ export default function Room() {
     let hostId = "";
 
     for (const msg of messages) {
-      if (msg.type === "room_state") {
+      const p = msg.payload;
+      if (msg.event === "room_state") {
         playerMap.clear();
-        hostId = msg.host_id as string;
-        const list = msg.players as PlayerInfo[];
-        for (const p of list) {
-          playerMap.set(p.id, p);
+        hostId = p.host_id as string;
+        const list = p.players as PlayerInfo[];
+        for (const player of list) {
+          playerMap.set(player.id, player);
         }
-      } else if (msg.type === "player_joined") {
-        playerMap.set(msg.player_id as string, {
-          id: msg.player_id as string,
-          name: msg.name as string,
+      } else if (msg.event === "player_joined") {
+        playerMap.set(p.player_id as string, {
+          id: p.player_id as string,
+          name: p.name as string,
         });
-      } else if (msg.type === "player_left") {
-        playerMap.delete(msg.player_id as string);
-      } else if (msg.type === "host_changed") {
-        hostId = msg.player_id as string;
+      } else if (msg.event === "player_left") {
+        playerMap.delete(p.player_id as string);
+      } else if (msg.event === "host_changed") {
+        hostId = p.player_id as string;
       }
     }
 
@@ -69,18 +83,33 @@ export default function Room() {
     const newMessages = messages.slice(lastProcessed.current);
     lastProcessed.current = messages.length;
     for (const msg of newMessages) {
-      if (msg.type === "chat_received") {
+      if (msg.event === "chat_received") {
         setLocalChat((prev) => [...prev, {
-          name: msg.name as string,
-          text: msg.text as string,
+          name: msg.payload.name as string,
+          text: msg.payload.text as string,
           isMe: false,
         }]);
       }
     }
   }, [messages]);
 
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Loading room...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
+      {needsJoin && (
+        <JoinRoomModal
+          roomId={roomId ?? ""}
+          onJoined={(id) => setPlayerId(id)}
+        />
+      )}
+      <div className={needsJoin ? "blur-md pointer-events-none select-none" : ""}>
       <h1 className="mb-2 text-4xl font-bold text-foreground">BS Poker</h1>
       <p className="mb-6 text-muted-foreground">
         Room: <span className="font-mono font-semibold text-foreground">{roomId}</span>
@@ -126,11 +155,32 @@ export default function Room() {
                     {p.id === playerId && (
                       <span className="text-xs text-muted-foreground">(you)</span>
                     )}
+                    {playerId === hostId && p.id !== playerId && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="ml-auto h-5 w-5 text-muted-foreground hover:text-destructive"
+                        onClick={() => send({ event: "kick_player", payload: { player_id: p.id } })}
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
           </CardContent>
+          {playerId === hostId && (
+            <CardFooter>
+              <Button
+                className="w-full"
+                disabled={!connected || players.length < 2}
+                onClick={() => send({ event: "start_game", payload: {} })}
+              >
+                Start Game
+              </Button>
+            </CardFooter>
+          )}
         </Card>
 
         <Card className="w-120">
@@ -200,6 +250,7 @@ export default function Room() {
             </form>
           </CardFooter>
         </Card>
+      </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import axios, { AxiosInstance } from "axios";
 
 type CreateRoomRequest = {
@@ -36,6 +36,28 @@ export const joinRoom = async (
 ): Promise<JoinRoomResponse> => {
     const res = await axios.post("/api/rooms/join", request);
     return res.data;
+}
+
+type GetRoomResponse = {
+    room_id: string;
+    player_count: number;
+}
+
+export const getRoom = async (
+    axios: AxiosInstance,
+    roomId: string
+): Promise<GetRoomResponse> => {
+    const res = await axios.get(`/api/rooms/${roomId}`);
+    return res.data;
+}
+
+export const useGetRoom = (roomId: string) => {
+    return useQuery<GetRoomResponse, Error>({
+        queryKey: ["room", roomId],
+        queryFn: () => getRoom(axios, roomId),
+        enabled: !!roomId,
+        retry: false,
+    });
 }
 
 export const useCreateRoom = () => {

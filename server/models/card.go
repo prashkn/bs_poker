@@ -1,6 +1,8 @@
 package models
 
 import (
+	"math/rand"
+
 	"github.com/google/uuid"
 )
 
@@ -263,4 +265,30 @@ func (h *MadeHand) IsStrongerThan(other *MadeHand) bool {
 	}
 
 	return false
+}
+
+// Dealing funcs
+func NewDeck() []Card {
+	cards := make([]Card, 0, 52)
+	for _, suit := range []Suit{Hearts, Diamonds, Clubs, Spades} {
+		for value := 2; value <= 14; value++ {
+			cards = append(cards, Card{Suit: suit, Value: Value(value)})
+		}
+	}
+	return cards
+}
+
+func ShuffleDeck(deck []Card) {
+	// Fisher-Yates shuffle
+	for i := len(deck) - 1; i > 0; i-- {
+		j := rand.Intn(i + 1)
+		deck[i], deck[j] = deck[j], deck[i]
+	}
+}
+
+// Deal takes n cards from the top of the deck.
+func Deal(deck []Card, numCards int) (remainingDeck []Card, dealtCards []Card) {
+	dealtCards = deck[:numCards]
+	remainingDeck = deck[numCards:]
+	return remainingDeck, dealtCards
 }

@@ -22,8 +22,7 @@ func handlePlayerDisconnect(player *models.Player, room *models.Room, registry s
 	wasHost := room.HostID == playerID
 
 	// Build broadcast messages before removing, so we don't race on room.Players
-	leftMsg, _ := json.Marshal(map[string]interface{}{
-		"type":      string(models.MessageTypePlayerLeft),
+	leftMsg, _ := models.NewMessage(models.MessageTypePlayerLeft, map[string]any{
 		"player_id": playerID.String(),
 	})
 
@@ -39,11 +38,9 @@ func handlePlayerDisconnect(player *models.Player, room *models.Room, registry s
 
 	// If the departing player was the host, notify remaining players of the new host
 	if wasHost && len(room.Players) > 0 {
-		hostChanged := map[string]interface{}{
-			"type":      string(models.MesssageTypeHostChanged),
+		if msg, err := models.NewMessage(models.MesssageTypeHostChanged, map[string]any{
 			"player_id": room.HostID.String(),
-		}
-		if msg, err := json.Marshal(hostChanged); err == nil {
+		}); err == nil {
 			broadcastToRoom(room, msg, uuid.Nil)
 		}
 	}
@@ -86,18 +83,15 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 		player.Conn = conn
 
 		// Send room_state to the connecting player
-		roomState := buildRoomState(room)
-		if msg, err := json.Marshal(roomState); err == nil {
+		if msg, err := buildRoomState(room); err == nil {
 			player.SendCh <- msg
 		}
 
 		// Broadcast player_joined to other players
-		joined := map[string]interface{}{
-			"type":      string(models.MessageTypePlayerJoined),
+		if msg, err := models.NewMessage(models.MessageTypePlayerJoined, map[string]any{
 			"player_id": player.ID.String(),
 			"name":      player.Name,
-		}
-		if msg, err := json.Marshal(joined); err == nil {
+		}); err == nil {
 			broadcastToRoom(room, msg, player.ID)
 		}
 
@@ -107,23 +101,22 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 	}
 }
 
-// buildRoomState creates the room_state payload sent to a player on connect.
-func buildRoomState(room *models.Room) map[string]interface{} {
-	players := make([]map[string]interface{}, 0, len(room.Players))
+// buildRoomState creates the room_state message sent to a player on connect.
+func buildRoomState(room *models.Room) ([]byte, error) {
+	players := make([]map[string]any, 0, len(room.Players))
 	for _, p := range room.Players {
-		players = append(players, map[string]interface{}{
+		players = append(players, map[string]any{
 			"id":   p.ID.String(),
 			"name": p.Name,
 		})
 	}
 
-	return map[string]interface{}{
-		"type":     string(models.MessageTypeRoomState),
+	return models.NewMessage(models.MessageTypeRoomState, map[string]any{
 		"room_id":  room.ID,
 		"host_id":  room.HostID.String(),
 		"players":  players,
 		"settings": room.Settings,
-	}
+	})
 }
 
 // broadcastToRoom sends a message to all players in the room except the excluded player.
@@ -155,7 +148,7 @@ func writePump(player *models.Player) {
 	}
 }
 
-// readPump reads messages from the WebSocket connection and handles them.
+// readPump reads messages from the WebSocket connection and dispatches them to handlers.
 func readPump(player *models.Player, room *models.Room, registry service.RoomRegistryService) {
 	defer func() {
 		handlePlayerDisconnect(player, room, registry)
@@ -178,17 +171,118 @@ func readPump(player *models.Player, room *models.Room, registry service.RoomReg
 			continue
 		}
 
-		if message.Event == models.MessageTypeChat {
-			chatMsg := map[string]interface{}{
-				"type":      string(models.MessageTypeChatReceived),
-				"player_id": player.ID.String(),
-				"name":      player.Name,
-				"text":      message.Payload["text"],
-			}
-			if broadcastMsg, err := json.Marshal(chatMsg); err == nil {
-				broadcastToRoom(room, broadcastMsg, player.ID)
-			}
+		switch message.Event {
+		case models.MessageTypeChat:
+			handleChat(player, room, message.Payload)
+		case models.MessageTypeStartGame:
+			handleStartGame(player, room)
+		case models.MessageTypeClaim:
+			handleClaim(player, room, message.Payload)
+		case models.MessageTypeCallBS:
+			handleCallBS(player, room)
+		case models.MessageTypeKickPlayer:
+			handleKick(player, room, registry, message.Payload)
+		case models.MessageTypeUpdateSettings:
+			handleUpdateSettings(player, room, message.Payload)
+		default:
+			log.Printf("unhandled event %q from player %s", message.Event, player.ID)
 		}
-
 	}
+}
+
+func handleChat(player *models.Player, room *models.Room, payload json.RawMessage) {
+	var p models.ChatPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		log.Printf("invalid chat payload from player %s: %v", player.ID, err)
+		return
+	}
+
+	toBroadcast, _ := models.NewMessage(models.MessageTypeChatReceived, map[string]any{
+		"name": player.Name,
+		"text": p.Text,
+	})
+	broadcastToRoom(room, toBroadcast, player.ID)
+}
+
+func handleStartGame(player *models.Player, room *models.Room) {
+	// TODO: verify player is host, room has enough players, no game in progress
+	// TODO: initialize game state, deal cards, broadcast game_started
+	log.Printf("player %s requested start_game in room %s", player.ID, room.ID)
+}
+
+func handleClaim(player *models.Player, room *models.Room, payload json.RawMessage) {
+	var p models.ClaimPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		log.Printf("invalid claim payload from player %s: %v", player.ID, err)
+		return
+	}
+
+	// TODO: validate it's this player's turn, claim is higher than current, broadcast claim_made
+	log.Printf("player %s claimed %s in room %s", player.ID, p.Hand, room.ID)
+}
+
+func handleCallBS(player *models.Player, room *models.Room) {
+	// TODO: validate it's this player's turn and there's an active claim
+	// TODO: resolve BS, broadcast bs_called + bs_result, handle elimination/round logic
+	log.Printf("player %s called BS in room %s", player.ID, room.ID)
+}
+
+func handleKick(player *models.Player, room *models.Room, registry service.RoomRegistryService, payload json.RawMessage) {
+	var p models.KickPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		log.Printf("invalid kick payload from player %s: %v", player.ID, err)
+		return
+	}
+
+	// Only the host can kick
+	if room.HostID != player.ID {
+		log.Printf("player %s tried to kick but is not host in room %s", player.ID, room.ID)
+		return
+	}
+
+	targetID, err := uuid.Parse(p.PlayerID)
+	if err != nil {
+		log.Printf("invalid target player_id %q from player %s", p.PlayerID, player.ID)
+		return
+	}
+	if targetID == player.ID {
+		log.Printf("player %s tried to kick themselves in room %s", player.ID, room.ID)
+		return
+	}
+
+	target, err := registry.GetPlayerInRoom(room.ID, targetID)
+	if err != nil {
+		log.Printf("kick target %s not found in room %s", targetID, room.ID)
+		return
+	}
+
+	// Broadcast player_left to remaining players
+	leftMsg, _ := models.NewMessage(models.MessageTypePlayerLeft, map[string]any{
+		"player_id": targetID.String(),
+	})
+	broadcastToRoom(room, leftMsg, targetID)
+
+	// Remove from room
+	if err := registry.RemovePlayerFromRoom(room.ID, targetID); err != nil {
+		log.Printf("failed to remove kicked player %s from room %s: %v", targetID, room.ID, err)
+		return
+	}
+
+	// Close the kicked player's connection — their readPump will clean up
+	if target.Conn != nil {
+		target.Conn.Close()
+	}
+
+	log.Printf("player %s kicked %s from room %s", player.ID, targetID, room.ID)
+}
+
+func handleUpdateSettings(player *models.Player, room *models.Room, payload json.RawMessage) {
+	var p models.UpdateSettingsPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		log.Printf("invalid update_settings payload from player %s: %v", player.ID, err)
+		return
+	}
+
+	// TODO: verify player is host, update room settings, broadcast settings_updated
+	log.Printf("player %s requested settings update in room %s", player.ID, room.ID)
 }
