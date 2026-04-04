@@ -72,7 +72,7 @@ type ChatPayload struct {
 }
 
 type ClaimPayload struct {
-	Hand string `json:"hand"` // TODO: replace with HandRank type once game engine is built
+	MadeHand MadeHand `json:"made_hand"`
 }
 
 type KickPayload struct {

@@ -204,10 +204,64 @@ func handleChat(player *models.Player, room *models.Room, payload json.RawMessag
 	broadcastToRoom(room, toBroadcast, player.ID)
 }
 
+// sendError sends an error_message event to a single player.
+func sendError(player *models.Player, text string) {
+	if msg, err := models.NewMessage(models.MessageTypeErrorMessage, map[string]any{
+		"message": text,
+	}); err == nil {
+		select {
+		case player.SendCh <- msg:
+		default:
+		}
+	}
+}
+
+// sendToPlayer sends a message to a single player.
+func sendToPlayer(player *models.Player, msg []byte) {
+	select {
+	case player.SendCh <- msg:
+	default:
+		log.Printf("send channel full for player %s, dropping message", player.ID)
+	}
+}
+
+// broadcastTurn sends the current turn info to all players.
+func broadcastTurn(room *models.Room) {
+	game := room.Game
+	payload := map[string]any{
+		"player_id": game.TurnOrder[game.CurrentTurn].String(),
+	}
+	if game.CurrentClaim != nil {
+		payload["current_claim"] = game.CurrentClaim
+	}
+	if msg, err := models.NewMessage(models.MessageTypeTurn, payload); err == nil {
+		broadcastToRoom(room, msg, uuid.Nil)
+	}
+}
+
 func handleStartGame(player *models.Player, room *models.Room) {
-	// TODO: verify player is host, room has enough players, no game in progress
-	// TODO: initialize game state, deal cards, broadcast game_started
-	log.Printf("player %s requested start_game in room %s", player.ID, room.ID)
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if err := StartGame(room, player.ID); err != nil {
+		sendError(player, err.Error())
+		return
+	}
+
+	// Send game_started to each player individually (each gets their own hand)
+	for _, p := range room.Players {
+		if p.Conn == nil {
+			continue
+		}
+		if msg, err := models.NewMessage(models.MessageTypeGameStarted, map[string]any{
+			"hand": p.Hand,
+		}); err == nil {
+			sendToPlayer(p, msg)
+		}
+	}
+
+	// Broadcast turn info
+	broadcastTurn(room)
 }
 
 func handleClaim(player *models.Player, room *models.Room, payload json.RawMessage) {
@@ -217,14 +271,81 @@ func handleClaim(player *models.Player, room *models.Room, payload json.RawMessa
 		return
 	}
 
-	// TODO: validate it's this player's turn, claim is higher than current, broadcast claim_made
-	log.Printf("player %s claimed %s in room %s", player.ID, p.Hand, room.ID)
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	if err := MakeClaim(room, player.ID, p.MadeHand); err != nil {
+		sendError(player, err.Error())
+		return
+	}
+
+	// Broadcast claim_made
+	if msg, err := models.NewMessage(models.MessageTypeClaimMade, map[string]any{
+		"player_id": player.ID.String(),
+		"made_hand": room.Game.CurrentClaim.MadeHand,
+	}); err == nil {
+		broadcastToRoom(room, msg, uuid.Nil)
+	}
+
+	// Broadcast turn info
+	broadcastTurn(room)
 }
 
 func handleCallBS(player *models.Player, room *models.Room) {
-	// TODO: validate it's this player's turn and there's an active claim
-	// TODO: resolve BS, broadcast bs_called + bs_result, handle elimination/round logic
-	log.Printf("player %s called BS in room %s", player.ID, room.ID)
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	result, err := CallBS(room, player.ID)
+	if err != nil {
+		sendError(player, err.Error())
+		return
+	}
+
+	// Broadcast bs_result with all hands revealed
+	if msg, err := models.NewMessage(models.MessageTypeBSResult, map[string]any{
+		"caller_id":   result.Caller.String(),
+		"claimer_id":  result.Claimer.String(),
+		"all_hands":   result.AllHands,
+		"claim_valid": result.ClaimValid,
+		"loser_id":    result.LoserID.String(),
+		"eliminated":  result.Eliminated,
+	}); err == nil {
+		broadcastToRoom(room, msg, uuid.Nil)
+	}
+
+	// If eliminated, broadcast player_eliminated
+	if result.Eliminated {
+		if msg, err := models.NewMessage(models.MessageTypePlayerEliminated, map[string]any{
+			"player_id": result.LoserID.String(),
+		}); err == nil {
+			broadcastToRoom(room, msg, uuid.Nil)
+		}
+	}
+
+	// Game over or new round
+	if result.GameOver {
+		if msg, err := models.NewMessage(models.MessageTypeGameOver, map[string]any{
+			"winner_id": result.WinnerID.String(),
+		}); err == nil {
+			broadcastToRoom(room, msg, uuid.Nil)
+		}
+		return
+	}
+
+	// New round started — send each player their new hand
+	for _, p := range room.Players {
+		if !p.IsAlive || p.Conn == nil {
+			continue
+		}
+		if msg, err := models.NewMessage(models.MessageTypeRoundStarted, map[string]any{
+			"hand":  p.Hand,
+			"round": room.Game.Round,
+		}); err == nil {
+			sendToPlayer(p, msg)
+		}
+	}
+
+	broadcastTurn(room)
 }
 
 func handleKick(player *models.Player, room *models.Room, registry service.RoomRegistryService, payload json.RawMessage) {
