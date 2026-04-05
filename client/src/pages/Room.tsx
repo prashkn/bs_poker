@@ -6,6 +6,7 @@ import { useGameState } from "@/hooks/useGameState";
 import { useGetRoom } from "@/api/room";
 import JoinRoomModal from "@/components/JoinRoomModal";
 import PlayerList from "@/components/PlayerList";
+import GameBoard from "@/components/GameBoard";
 import WebSocketLog from "@/components/WebSocketLog";
 import Chat from "@/components/Chat";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,8 @@ export default function Room() {
   }, [isError, navigate]);
 
   const { messages, log, connected, send } = useWebSocket(roomId ?? "", playerId);
-  const { players, hostId } = useGameState(messages, playerId);
+  const gameState = useGameState(messages, playerId);
+  const { players, hostId, phase, currentTurnPlayerId, isMyTurn, myHand, round } = gameState;
   const playerList = Array.from(players.values());
 
   if (isLoading) {
@@ -79,8 +81,21 @@ export default function Room() {
           connected={connected}
           send={send}
         />
-        <WebSocketLog log={log} />
-        <Chat messages={messages} connected={connected} send={send} />
+        {phase === "playing" ? (
+          <GameBoard
+            currentTurnPlayerId={currentTurnPlayerId}
+            players={players}
+            isMyTurn={isMyTurn}
+            myHand={myHand}
+            round={round}
+            send={send}
+          />
+        ) : (
+          <>
+            <WebSocketLog log={log} />
+            <Chat messages={messages} connected={connected} send={send} />
+          </>
+        )}
       </div>
       </div>
     </div>
