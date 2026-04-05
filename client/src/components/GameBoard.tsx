@@ -1,4 +1,4 @@
-import PlayingCard from "@heruka_urgyen/react-playing-cards/lib/TcN";
+import PlayingCard from "@/components/PlayingCard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -7,26 +7,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import ClaimPopover from "@/components/ClaimPopover";
-import type { PlayerState, Card as GameCard, MadeHand } from "@/types";
-import type { WSMessage } from "@/hooks/useWebSocket";
+import { useGame } from "@/hooks/useRoom";
+import { useRoom } from "@/hooks/useRoom";
+import type { MadeHand } from "@/types";
 
-interface GameBoardProps {
-  currentTurnPlayerId: string;
-  players: Map<string, PlayerState>;
-  isMyTurn: boolean;
-  myHand: GameCard[];
-  round: number;
-  send: (msg: WSMessage) => void;
-}
-
-export default function GameBoard({
-  currentTurnPlayerId,
-  players,
-  isMyTurn,
-  myHand,
-  round,
-  send,
-}: GameBoardProps) {
+export default function GameBoard() {
+  const { currentTurnPlayerId, players, isMyTurn, myHand, round } = useGame();
+  const { send } = useRoom();
   const currentPlayer = players.get(currentTurnPlayerId);
 
   function handleClaim(madeHand: MadeHand) {
@@ -61,12 +48,7 @@ export default function GameBoard({
             <p className="text-xs text-muted-foreground mb-1">Your hand</p>
             <div className="flex gap-1">
               {myHand.map((card, i) => (
-                <div key={i} className="h-28 w-20 [&_svg]:h-full [&_svg]:w-full">
-                  <PlayingCard
-                    card={toCardCode(card)}
-                    height="96"
-                  />
-                </div>
+                <PlayingCard key={i} card={card} />
               ))}
             </div>
           </div>
@@ -83,10 +65,4 @@ export default function GameBoard({
       </CardContent>
     </Card>
   );
-}
-
-function toCardCode(card: GameCard): string {
-  const value = card.value >= 10 ? ['T', 'J', 'Q', 'K', 'A'][card.value - 10] : card.value.toString();
-  const suit = card.suit.charAt(0).toLowerCase();
-  return `${value}${suit}`;
 }

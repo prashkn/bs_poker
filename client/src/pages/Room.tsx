@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CopyIcon } from "lucide-react"
-import { useWebSocket } from "@/hooks/useWebSocket";
-import { useGameState } from "@/hooks/useGameState";
+import { CopyIcon } from "lucide-react";
 import { useGetRoom } from "@/api/room";
+import { RoomProvider } from "@/context/RoomContext";
+import { useRoom } from "@/hooks/useRoom";
+import { useGame } from "@/hooks/useRoom";
 import JoinRoomModal from "@/components/JoinRoomModal";
 import PlayerList from "@/components/PlayerList";
 import GameBoard from "@/components/GameBoard";
@@ -27,11 +28,6 @@ export default function Room() {
     }
   }, [isError, navigate]);
 
-  const { messages, log, connected, send } = useWebSocket(roomId ?? "", playerId);
-  const gameState = useGameState(messages, playerId);
-  const { players, hostId, phase, currentTurnPlayerId, isMyTurn, myHand, round } = gameState;
-  const playerList = Array.from(players.values());
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -48,7 +44,19 @@ export default function Room() {
           onJoined={(id) => setPlayerId(id)}
         />
       )}
-      <div className={needsJoin ? "blur-md pointer-events-none select-none" : ""}>
+      <RoomProvider roomId={roomId ?? ""} playerId={playerId}>
+        <RoomContent needsJoin={needsJoin} roomId={roomId ?? ""} />
+      </RoomProvider>
+    </div>
+  );
+}
+
+function RoomContent({ needsJoin, roomId }: { needsJoin: boolean; roomId: string }) {
+  const { connected } = useRoom();
+  const { phase } = useGame();
+
+  return (
+    <div className={needsJoin ? "blur-md pointer-events-none select-none" : ""}>
       <h1 className="mb-2 text-4xl font-bold text-foreground">BS Poker</h1>
       <p className="mb-6 text-muted-foreground">
         Room: <span className="font-mono font-semibold text-foreground">{roomId}</span>
@@ -57,8 +65,8 @@ export default function Room() {
           size="icon"
           className="ml-1 h-6 w-6"
           onClick={() => {
-            navigator.clipboard.writeText(roomId ?? "");
-            toast.success("Room Code copied", { position: 'top-center' });
+            navigator.clipboard.writeText(roomId);
+            toast.success("Room Code copied", { position: "top-center" });
           }}
         >
           <CopyIcon className="h-3.5 w-3.5" />
@@ -74,29 +82,15 @@ export default function Room() {
       </div>
 
       <div className="flex gap-4">
-        <PlayerList
-          players={playerList}
-          hostId={hostId}
-          playerId={playerId}
-          connected={connected}
-          send={send}
-        />
+        <PlayerList />
         {phase === "playing" ? (
-          <GameBoard
-            currentTurnPlayerId={currentTurnPlayerId}
-            players={players}
-            isMyTurn={isMyTurn}
-            myHand={myHand}
-            round={round}
-            send={send}
-          />
+          <GameBoard />
         ) : (
           <>
-            <WebSocketLog log={log} />
-            <Chat messages={messages} connected={connected} send={send} />
+            <WebSocketLog />
+            <Chat />
           </>
         )}
-      </div>
       </div>
     </div>
   );

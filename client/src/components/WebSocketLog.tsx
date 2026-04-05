@@ -4,13 +4,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { LogEntry } from "@/hooks/useWebSocket";
+import { useLog } from "@/hooks/useRoom";
 
-interface WebSocketLogProps {
-  log: LogEntry[];
-}
+export default function WebSocketLog() {
+  const { log } = useLog();
 
-export default function WebSocketLog({ log }: WebSocketLogProps) {
   return (
     <Card className="w-120">
       <CardHeader>

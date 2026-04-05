@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { WSMessage } from "@/hooks/useWebSocket";
+import { useChat } from "@/hooks/useRoom";
 
 interface ChatEntry {
   name: string;
@@ -16,13 +16,8 @@ interface ChatEntry {
   isMe: boolean;
 }
 
-interface ChatProps {
-  messages: WSMessage[];
-  connected: boolean;
-  send: (msg: WSMessage) => void;
-}
-
-export default function Chat({ messages, connected, send }: ChatProps) {
+export default function Chat() {
+  const { messages, connected, send } = useChat();
   const [chatInput, setChatInput] = useState("");
   const [localChat, setLocalChat] = useState<ChatEntry[]>([]);
 

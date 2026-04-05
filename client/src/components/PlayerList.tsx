@@ -8,22 +8,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { PlayerState } from "@/types";
-import type { WSMessage } from "@/hooks/useWebSocket";
+import { usePlayers } from "@/hooks/useRoom";
 
 function avatarUrl(seed: string) {
   return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
 }
 
-interface PlayerListProps {
-  players: PlayerState[];
-  hostId: string;
-  playerId: string;
-  connected: boolean;
-  send: (msg: WSMessage) => void;
-}
-
-export default function PlayerList({ players, hostId, playerId, connected, send }: PlayerListProps) {
+export default function PlayerList() {
+  const { players, hostId, playerId, connected, send } = usePlayers();
   const isHost = playerId === hostId;
 
   return (
