@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/prashkn/bs-poker/server/models"
+	"github.com/prashkn/bs-poker/server/game"
 	"github.com/prashkn/bs-poker/server/service"
 )
 
@@ -53,7 +53,7 @@ func handleJoinRoom(registry service.RoomRegistryService) http.HandlerFunc {
 			return
 		}
 
-		player := models.NewPlayer(req.PlayerName)
+		player := game.NewPlayer(req.PlayerName)
 		err = registry.AddPlayerToRoom(room.ID, player)
 		if err != nil {
 			if err == service.ErrPlayerNameTaken {

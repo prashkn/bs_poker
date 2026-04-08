@@ -9,9 +9,7 @@ type server struct {
 }
 
 func NewServer() *server {
-	registry := service.NewRoomRegistryService()
-
 	return &server{
-		roomRegistryService: registry,
+		roomRegistryService: service.NewRoomRegistryService(),
 	}
 }

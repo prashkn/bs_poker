@@ -1,4 +1,4 @@
-package models
+package game
 
 import (
 	"github.com/google/uuid"

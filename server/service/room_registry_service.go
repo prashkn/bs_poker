@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/prashkn/bs-poker/server/models"
+	"github.com/prashkn/bs-poker/server/game"
 	"github.com/wordgen/wordlists"
 )
 
@@ -21,26 +21,26 @@ var (
 
 type roomRegistryService struct {
 	mu    sync.RWMutex
-	rooms map[string]*models.Room
+	rooms map[string]*game.Room
 }
 
 func NewRoomRegistryService() *roomRegistryService {
 	return &roomRegistryService{
-		rooms: make(map[string]*models.Room),
+		rooms: make(map[string]*game.Room),
 	}
 }
 
 type RoomRegistryService interface {
-	GetRoom(id string) (*models.Room, error)
-	CreateRoom(password string) *models.Room
+	GetRoom(id string) (*game.Room, error)
+	CreateRoom(password string) *game.Room
 	DeleteRoom(id string)
-	AddPlayerToRoom(roomID string, player *models.Player) error
+	AddPlayerToRoom(roomID string, player *game.Player) error
 	RemovePlayerFromRoom(roomID string, playerID uuid.UUID) error
-	GetPlayerInRoom(roomID string, playerID uuid.UUID) (*models.Player, error)
+	GetPlayerInRoom(roomID string, playerID uuid.UUID) (*game.Player, error)
 	CleanupEmptyRooms(interval time.Duration)
 }
 
-func (r *roomRegistryService) GetRoom(id string) (*models.Room, error) {
+func (r *roomRegistryService) GetRoom(id string) (*game.Room, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -53,7 +53,7 @@ func (r *roomRegistryService) GetRoom(id string) (*models.Room, error) {
 }
 
 // CreateRoom creates a new room with the given password and adds it to the registry.
-func (r *roomRegistryService) CreateRoom(password string) *models.Room {
+func (r *roomRegistryService) CreateRoom(password string) *game.Room {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -63,11 +63,11 @@ func (r *roomRegistryService) CreateRoom(password string) *models.Room {
 		id = generateRoomID()
 	}
 
-	r.rooms[id] = &models.Room{
+	r.rooms[id] = &game.Room{
 		ID:       id,
 		Password: password, // TODO: hash? we store in memory for now, so not a big deal
-		Players:  []*models.Player{},
-		Settings: models.RoomSettings{
+		Players:  []*game.Player{},
+		Settings: game.RoomSettings{
 			TimePerTurn:               30 * time.Second,
 			MaxCardsBeforeElimination: 6,
 		},
@@ -83,7 +83,7 @@ func (r *roomRegistryService) DeleteRoom(id string) {
 	delete(r.rooms, id)
 }
 
-func (r *roomRegistryService) AddPlayerToRoom(roomID string, player *models.Player) error {
+func (r *roomRegistryService) AddPlayerToRoom(roomID string, player *game.Player) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -132,7 +132,7 @@ func (r *roomRegistryService) RemovePlayerFromRoom(roomID string, playerID uuid.
 	return ErrPlayerNotFound
 }
 
-func (r *roomRegistryService) GetPlayerInRoom(roomID string, playerID uuid.UUID) (*models.Player, error) {
+func (r *roomRegistryService) GetPlayerInRoom(roomID string, playerID uuid.UUID) (*game.Player, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

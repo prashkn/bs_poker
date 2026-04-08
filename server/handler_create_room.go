@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/prashkn/bs-poker/server/models"
+	"github.com/prashkn/bs-poker/server/game"
 	"github.com/prashkn/bs-poker/server/service"
 )
 
@@ -39,7 +39,7 @@ func handleCreateRoom(registry service.RoomRegistryService) http.HandlerFunc {
 		}
 
 		room := registry.CreateRoom(req.Password)
-		host := models.NewPlayer(req.HostName)
+		host := game.NewPlayer(req.HostName)
 		err := registry.AddPlayerToRoom(room.ID, host)
 		if err != nil {
 			http.Error(w, "failed to add host to room", http.StatusInternalServerError)
