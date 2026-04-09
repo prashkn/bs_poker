@@ -14,6 +14,7 @@ type Player struct {
 	CardCount int             `json:"card_count"`
 	Conn      *websocket.Conn `json:"-"`
 	SendCh    chan []byte     `json:"-"`
+	Done      chan struct{}   `json:"-"`
 }
 
 func NewPlayer(name string) *Player {
@@ -23,5 +24,6 @@ func NewPlayer(name string) *Player {
 		IsAlive:   true,
 		CardCount: 2,
 		SendCh:    make(chan []byte, 256),
+		Done:      make(chan struct{}),
 	}
 }
