@@ -65,7 +65,7 @@ func (r *roomRegistryService) CreateRoom(password string) *game.Room {
 
 	r.rooms[id] = &game.Room{
 		ID:       id,
-		Password: password, // TODO: hash? we store in memory for now, so not a big deal
+		Password: password,
 		Players:  []*game.Player{},
 		Settings: game.RoomSettings{
 			TimePerTurn:               30 * time.Second,

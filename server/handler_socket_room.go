@@ -52,27 +52,57 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roomID := r.PathValue("roomID")
 		playerIDStr := r.URL.Query().Get("player_id")
-
-		// Validation
-		if playerIDStr == "" {
-			http.Error(w, "player_id is required", http.StatusBadRequest)
-			return
-		}
-		playerID, err := uuid.Parse(playerIDStr)
-		if err != nil {
-			http.Error(w, "invalid player_id", http.StatusBadRequest)
-			return
-		}
+		playerName := r.URL.Query().Get("player_name")
+		password := r.URL.Query().Get("password")
 
 		room, err := registry.GetRoom(roomID)
 		if err != nil {
 			http.Error(w, "room not found", http.StatusNotFound)
 			return
 		}
-		player, err := registry.GetPlayerInRoom(roomID, playerID)
-		if err != nil {
-			http.Error(w, "player not found in room", http.StatusNotFound)
-			return
+
+		var player *game.Player
+
+		if playerIDStr != "" {
+			// Reconnecting player
+			playerID, err := uuid.Parse(playerIDStr)
+			if err != nil {
+				http.Error(w, "invalid player_id", http.StatusBadRequest)
+				return
+			}
+			player, err = registry.GetPlayerInRoom(roomID, playerID)
+			if err != nil {
+				http.Error(w, "player not found in room", http.StatusNotFound)
+				return
+			}
+		} else {
+			// New player joining
+			if playerName == "" {
+				http.Error(w, "player_name is required", http.StatusBadRequest)
+				return
+			}
+			if password == "" {
+				http.Error(w, "password is required", http.StatusBadRequest)
+				return
+			}
+			if room.Password != password {
+				http.Error(w, "invalid password", http.StatusUnauthorized)
+				return
+			}
+			if room.Session != nil {
+				http.Error(w, "cannot join room while game is in progress", http.StatusConflict)
+				return
+			}
+
+			player = game.NewPlayer(playerName)
+			if err := registry.AddPlayerToRoom(room.ID, player); err != nil {
+				if err == service.ErrPlayerNameTaken {
+					http.Error(w, "player name already taken in this room", http.StatusConflict)
+					return
+				}
+				http.Error(w, "failed to join room", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		conn, err := upgrader.Upgrade(w, r, nil)

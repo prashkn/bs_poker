@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -49,5 +50,7 @@ func handleCreateRoom(registry service.RoomRegistryService) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(createRoomResponse{RoomID: room.ID, HostID: host.ID})
+
+		log.Printf("Created room %s with host %s", room.ID, host.Name)
 	}
 }
