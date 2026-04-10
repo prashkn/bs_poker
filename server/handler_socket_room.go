@@ -17,12 +17,22 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// Websocket API Contracts:
+const (
+	paramRoomID     = "room_id"
+	paramPlayerID   = "player_id"
+	paramPlayerName = "player_name"
+	paramPassword   = "password"
+)
+
 func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		roomID := r.PathValue("roomID")
-		playerIDStr := r.URL.Query().Get("player_id")
-		playerName := r.URL.Query().Get("player_name")
-		password := r.URL.Query().Get("password")
+		// Expected query params: room_id && (player_id || (player_name && password))
+		// A returning player will need their player_id; a new player will need player_name and password.
+		roomID := r.PathValue(paramRoomID)
+		playerIDStr := r.URL.Query().Get(paramPlayerID)
+		playerName := r.URL.Query().Get(paramPlayerName)
+		password := r.URL.Query().Get(paramPassword)
 
 		room, err := registry.GetRoom(roomID)
 		if err != nil {
@@ -94,18 +104,13 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 		player.Conn = conn
 
 		// Send room_state to the connecting player
-		if msg, err := buildRoomState(room); err == nil {
-			sendToPlayer(player, msg)
-		}
+		sendToPlayer(player, buildRoomState(room))
 
-		// Broadcast player_joined to other players (only for new players)
-		if !isReconnect {
-			if msg, err := game.NewMessage(game.MessageTypePlayerJoined, map[string]any{
-				"player_id": player.ID.String(),
-				"name":      player.Name,
-			}); err == nil {
-				broadcastToRoom(room, msg, player.ID)
-			}
+		// Broadcast to other players
+		if isReconnect {
+			broadcastToRoom(room, game.NewPlayerReconnectedMessage(player.ID), player.ID)
+		} else {
+			broadcastToRoom(room, game.NewPlayerJoinedMessage(player.ID, player.Name), player.ID)
 		}
 
 		// Start write goroutine, then run read loop blocking on this goroutine
@@ -161,46 +166,42 @@ func readPump(player *game.Player, room *game.Room, registry service.RoomRegistr
 }
 
 func handlePlayerDisconnect(player *game.Player, room *game.Room, registry service.RoomRegistryService) {
-	playerID := player.ID
-	wasHost := room.HostID == playerID
-
-	leftMsg, _ := game.NewMessage(game.MessageTypePlayerLeft, map[string]any{
-		"player_id": playerID.String(),
-	})
-	broadcastToRoom(room, leftMsg, playerID)
-
-	if err := registry.RemovePlayerFromRoom(room.ID, playerID); err != nil {
-		log.Printf("failed to remove player %s from room %s: %v", playerID, room.ID, err)
+	// During a game, keep the player in the room but mark them as disconnected
+	if room.Session != nil {
+		player.Conn = nil
+		broadcastToRoom(room, game.NewPlayerDisconnectedMessage(player.ID), player.ID)
+		log.Printf("player %s disconnected from room %s (game in progress)", player.ID, room.ID)
 		return
 	}
 
-	if wasHost && len(room.Players) > 0 {
-		if msg, err := game.NewMessage(game.MesssageTypeHostChanged, map[string]any{
-			"player_id": room.HostID.String(),
-		}); err == nil {
-			broadcastToRoom(room, msg, uuid.Nil)
-		}
+	// In lobby, fully remove the player
+	hostChanged, err := registry.RemovePlayerFromRoom(room.ID, player.ID)
+	if err != nil {
+		log.Printf("failed to remove player %s from room %s: %v", player.ID, room.ID, err)
+		return
 	}
 
-	log.Printf("player %s left room %s (%d remaining)", playerID, room.ID, len(room.Players))
+	broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), uuid.Nil)
+
+	if hostChanged {
+		broadcastToRoom(room, game.NewHostChangedMessage(room.HostID), uuid.Nil)
+	}
+
+	log.Printf("player %s left room %s (%d remaining)", player.ID, room.ID, len(room.Players))
 }
 
 // buildRoomState creates the room_state message sent to a player on connect.
-func buildRoomState(room *game.Room) ([]byte, error) {
-	players := make([]map[string]any, 0, len(room.Players))
+func buildRoomState(room *game.Room) []byte {
+	players := make([]game.RoomStatePlayer, 0, len(room.Players))
 	for _, p := range room.Players {
-		players = append(players, map[string]any{
-			"id":   p.ID.String(),
-			"name": p.Name,
+		players = append(players, game.RoomStatePlayer{
+			ID:        p.ID.String(),
+			Name:      p.Name,
+			Connected: p.Conn != nil,
 		})
 	}
 
-	return game.NewMessage(game.MessageTypeRoomState, map[string]any{
-		"room_id":  room.ID,
-		"host_id":  room.HostID.String(),
-		"players":  players,
-		"settings": room.Settings,
-	})
+	return game.NewRoomStateMessage(room.ID, room.HostID, players, room.Settings)
 }
 
 // broadcastToRoom sends a message to all players in the room except the excluded player.

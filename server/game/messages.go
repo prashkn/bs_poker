@@ -3,6 +3,8 @@ package game
 import (
 	"encoding/json"
 	"errors"
+
+	"github.com/google/uuid"
 )
 
 // MessageEvent is the type of ws message
@@ -18,21 +20,23 @@ const (
 	MessageTypeUpdateSettings MessageEvent = "update_settings"
 
 	// Server -> Client
-	MessageTypeRoomState        MessageEvent = "room_state"
-	MessageTypePlayerJoined     MessageEvent = "player_joined"
-	MessageTypePlayerLeft       MessageEvent = "player_left"
-	MesssageTypeHostChanged     MessageEvent = "host_changed"
-	MessageTypeGameStarted      MessageEvent = "game_started"
-	MessageTypeTurn             MessageEvent = "turn"
-	MessageTypeClaimMade        MessageEvent = "claim_made"
-	MessageTypeBSCalled         MessageEvent = "bs_called"
-	MessageTypeBSResult         MessageEvent = "bs_result"
-	MessageTypeRoundStarted     MessageEvent = "round_started"
-	MessageTypePlayerEliminated MessageEvent = "player_eliminated"
-	MessageTypeGameOver         MessageEvent = "game_over"
-	MessageTypeChatReceived     MessageEvent = "chat_received"
-	MessageTypeSettingsUpdated  MessageEvent = "settings_updated"
-	MessageTypeErrorMessage     MessageEvent = "error_message"
+	MessageTypeRoomState          MessageEvent = "room_state"
+	MessageTypePlayerJoined       MessageEvent = "player_joined"
+	MessageTypePlayerLeft         MessageEvent = "player_left"
+	MessageTypePlayerDisconnected MessageEvent = "player_disconnected"
+	MessageTypePlayerReconnected  MessageEvent = "player_reconnected"
+	MesssageTypeHostChanged       MessageEvent = "host_changed"
+	MessageTypeGameStarted        MessageEvent = "game_started"
+	MessageTypeTurn               MessageEvent = "turn"
+	MessageTypeClaimMade          MessageEvent = "claim_made"
+	MessageTypeBSCalled           MessageEvent = "bs_called"
+	MessageTypeBSResult           MessageEvent = "bs_result"
+	MessageTypeRoundStarted       MessageEvent = "round_started"
+	MessageTypePlayerEliminated   MessageEvent = "player_eliminated"
+	MessageTypeGameOver           MessageEvent = "game_over"
+	MessageTypeChatReceived       MessageEvent = "chat_received"
+	MessageTypeSettingsUpdated    MessageEvent = "settings_updated"
+	MessageTypeErrorMessage       MessageEvent = "error_message"
 )
 
 // RawMessage is the routing envelope — extract the event, keep raw payload bytes for per-handler decoding.
@@ -55,30 +59,61 @@ func ParseMessage(data []byte) (*RawMessage, error) {
 }
 
 // NewMessage builds a JSON-encoded message with the standard { event, payload } structure.
-func NewMessage(event MessageEvent, payload any) ([]byte, error) {
-	return json.Marshal(struct {
+func newMessage(event MessageEvent, payload any) []byte {
+	data, _ := json.Marshal(struct {
 		Event   MessageEvent `json:"event"`
 		Payload any          `json:"payload"`
 	}{
 		Event:   event,
 		Payload: payload,
 	})
+	return data
 }
 
-// Client -> Server payloads
+// Server -> Client message constructors
 
-type ChatPayload struct {
-	Text string `json:"text"`
+func NewPlayerJoinedMessage(playerID uuid.UUID, name string) []byte {
+	return newMessage(MessageTypePlayerJoined, map[string]any{
+		"player_id": playerID.String(),
+		"name":      name,
+	})
 }
 
-type ClaimPayload struct {
-	MadeHand MadeHand `json:"made_hand"`
+func NewPlayerLeftMessage(playerID uuid.UUID) []byte {
+	return newMessage(MessageTypePlayerLeft, map[string]any{
+		"player_id": playerID.String(),
+	})
 }
 
-type KickPayload struct {
-	PlayerID string `json:"player_id"`
+func NewPlayerDisconnectedMessage(playerID uuid.UUID) []byte {
+	return newMessage(MessageTypePlayerDisconnected, map[string]any{
+		"player_id": playerID.String(),
+	})
 }
 
-type UpdateSettingsPayload struct {
-	Settings RoomSettings `json:"settings"`
+func NewPlayerReconnectedMessage(playerID uuid.UUID) []byte {
+	return newMessage(MessageTypePlayerReconnected, map[string]any{
+		"player_id": playerID.String(),
+	})
+}
+
+func NewHostChangedMessage(playerID uuid.UUID) []byte {
+	return newMessage(MesssageTypeHostChanged, map[string]any{
+		"player_id": playerID.String(),
+	})
+}
+
+type RoomStatePlayer struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Connected bool   `json:"connected"`
+}
+
+func NewRoomStateMessage(roomID string, hostID uuid.UUID, players []RoomStatePlayer, settings RoomSettings) []byte {
+	return newMessage(MessageTypeRoomState, map[string]any{
+		"room_id":  roomID,
+		"host_id":  hostID.String(),
+		"players":  players,
+		"settings": settings,
+	})
 }
