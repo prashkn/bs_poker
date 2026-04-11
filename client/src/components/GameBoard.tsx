@@ -12,12 +12,16 @@ import { useRoom } from "@/hooks/useRoom";
 import type { MadeHand } from "@/types";
 
 export default function GameBoard() {
-  const { currentTurnPlayerId, players, isMyTurn, myHand, round } = useGame();
+  const { currentTurnPlayerId, players, isMyTurn, canCallBS, myHand, round } = useGame();
   const { send } = useRoom();
   const currentPlayer = players.get(currentTurnPlayerId);
 
   function handleClaim(madeHand: MadeHand) {
     send({ event: "claim", payload: { made_hand: madeHand } });
+  }
+
+  function handleCallBS() {
+    send({ event: "call_bs", payload: {} });
   }
 
   return (
@@ -57,7 +61,12 @@ export default function GameBoard() {
         {isMyTurn && (
           <div className="flex gap-2">
             <ClaimPopover onClaim={handleClaim} disabled={false} />
-            <Button className="flex-1" variant="destructive" onClick={() => {}}>
+            <Button
+              className="flex-1"
+              variant="destructive"
+              disabled={!canCallBS}
+              onClick={handleCallBS}
+            >
               Call BS
             </Button>
           </div>

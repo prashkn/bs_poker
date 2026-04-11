@@ -37,10 +37,13 @@ export default function PlayerList() {
                   <AvatarImage src={avatarUrl(p.id)} alt={p.name} />
                   <AvatarFallback>{p.name[0]?.toUpperCase()}</AvatarFallback>
                 </Avatar>
-                {p.name}
+                <span className={p.connected ? "" : "opacity-50"}>{p.name}</span>
                 {p.id === hostId && <span title="Host">👑</span>}
                 {p.id === playerId && (
                   <span className="text-xs text-muted-foreground">(you)</span>
+                )}
+                {!p.connected && (
+                  <span className="text-xs text-muted-foreground">(offline)</span>
                 )}
                 {isHost && p.id !== playerId && (
                   <Button

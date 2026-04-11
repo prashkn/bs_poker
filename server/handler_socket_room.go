@@ -19,20 +19,28 @@ var upgrader = websocket.Upgrader{
 
 // Websocket API Contracts:
 const (
-	paramRoomID     = "room_id"
-	paramPlayerID   = "player_id"
-	paramPlayerName = "player_name"
-	paramPassword   = "password"
+	paramRoomID   = "room_id"
+	paramPlayerID = "player_id"
 )
 
 func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Expected query params: room_id && (player_id || (player_name && password))
-		// A returning player will need their player_id; a new player will need player_name and password.
 		roomID := r.PathValue(paramRoomID)
 		playerIDStr := r.URL.Query().Get(paramPlayerID)
-		playerName := r.URL.Query().Get(paramPlayerName)
-		password := r.URL.Query().Get(paramPassword)
+
+		if roomID == "" {
+			http.Error(w, "room_id is required in path", http.StatusBadRequest)
+			return
+		}
+		if playerIDStr == "" {
+			http.Error(w, "player_id is required in query", http.StatusBadRequest)
+			return
+		}
+		playerID, err := uuid.Parse(playerIDStr)
+		if playerIDStr != "" && err != nil {
+			http.Error(w, "invalid player_id", http.StatusBadRequest)
+			return
+		}
 
 		room, err := registry.GetRoom(roomID)
 		if err != nil {
@@ -40,65 +48,30 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 			return
 		}
 
-		var player *game.Player
-		isReconnect := false
-
-		if playerIDStr != "" {
-			// Reconnecting player
-			playerID, err := uuid.Parse(playerIDStr)
-			if err != nil {
-				http.Error(w, "invalid player_id", http.StatusBadRequest)
-				return
-			}
-			player, err = registry.GetPlayerInRoom(roomID, playerID)
-			if err != nil {
-				http.Error(w, "player not found in room", http.StatusNotFound)
-				return
-			}
-			isReconnect = true
-
-			// Tear down old connection before upgrading
-			close(player.Done)
-			if player.Conn != nil {
-				player.Conn.Close()
-			}
-			player.SendCh = make(chan []byte, 256)
-			player.Done = make(chan struct{})
-		} else {
-			// New player joining
-			if playerName == "" {
-				http.Error(w, "player_name is required", http.StatusBadRequest)
-				return
-			}
-			if password == "" {
-				http.Error(w, "password is required", http.StatusBadRequest)
-				return
-			}
-			if room.Password != password {
-				http.Error(w, "invalid password", http.StatusUnauthorized)
-				return
-			}
-			if room.Session != nil {
-				http.Error(w, "cannot join room while game is in progress", http.StatusConflict)
-				return
-			}
+		player, err := registry.GetPlayerInRoom(roomID, playerID)
+		if playerIDStr != "" && err != nil {
+			http.Error(w, "player not found in room", http.StatusNotFound)
+			return
 		}
 
-		// Upgrade first — if this fails, no player state to clean up (for new players)
+		if room.Session != nil {
+			http.Error(w, "cannot join room while game is in progress", http.StatusConflict)
+			return
+		}
+
+		// Tear down old connection before upgrading
+		close(player.Done)
+		if player.Conn != nil {
+			player.Conn.Close()
+		}
+		player.SendCh = make(chan []byte, 256)
+		player.Done = make(chan struct{})
+
+		// Upgrade to WebSocket
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("websocket upgrade failed: %v", err)
 			return
-		}
-
-		// For new players, create and add to room after successful upgrade
-		if !isReconnect {
-			player = game.NewPlayer(playerName)
-			if err := registry.AddPlayerToRoom(room.ID, player); err != nil {
-				log.Printf("failed to add player to room: %v", err)
-				conn.Close()
-				return
-			}
 		}
 
 		player.Conn = conn
@@ -107,11 +80,7 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 		sendToPlayer(player, buildRoomState(room))
 
 		// Broadcast to other players
-		if isReconnect {
-			broadcastToRoom(room, game.NewPlayerReconnectedMessage(player.ID), player.ID)
-		} else {
-			broadcastToRoom(room, game.NewPlayerJoinedMessage(player.ID, player.Name), player.ID)
-		}
+		broadcastToRoom(room, game.NewPlayerJoinedMessage(player.ID, player.Name), player.ID)
 
 		// Start write goroutine, then run read loop blocking on this goroutine
 		go writePump(player)
@@ -169,7 +138,7 @@ func handlePlayerDisconnect(player *game.Player, room *game.Room, registry servi
 	// During a game, keep the player in the room but mark them as disconnected
 	if room.Session != nil {
 		player.Conn = nil
-		broadcastToRoom(room, game.NewPlayerDisconnectedMessage(player.ID), player.ID)
+		broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), player.ID)
 		log.Printf("player %s disconnected from room %s (game in progress)", player.ID, room.ID)
 		return
 	}

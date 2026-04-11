@@ -11,17 +11,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
-import { useJoinRoom } from "@/api/room";
 
 interface JoinRoomModalProps {
   roomId: string;
-  onJoined: (playerId: string) => void;
+  onJoin: (playerName: string, password: string) => void;
 }
 
-export default function JoinRoomModal({ roomId, onJoined }: JoinRoomModalProps) {
+export default function JoinRoomModal({ roomId, onJoin }: JoinRoomModalProps) {
   const [password, setPassword] = useState("");
   const [playerName, setPlayerName] = useState("");
-  const joinRoom = useJoinRoom();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,24 +27,11 @@ export default function JoinRoomModal({ roomId, onJoined }: JoinRoomModalProps) 
       toast.error("All fields are required.", { position: "top-center" });
       return;
     }
-    joinRoom.mutate(
-      { room_id: roomId, password, player_name: playerName },
-      {
-        onSuccess: (data) => {
-          sessionStorage.setItem(`player_id:${roomId}`, data.player_id);
-          onJoined(data.player_id);
-        },
-        onError: () => {
-          toast.error("Failed to join room.", {
-            position: "top-center",
-          });
-        },
-      }
-    );
+    onJoin(playerName, password);
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/50">
       <Card className="w-96">
         <form onSubmit={handleSubmit}>
           <CardHeader>
@@ -78,8 +63,8 @@ export default function JoinRoomModal({ roomId, onJoined }: JoinRoomModalProps) 
             </Field>
           </CardContent>
           <CardFooter>
-            <Button type="submit" className="w-full" disabled={joinRoom.isPending}>
-              {joinRoom.isPending ? "Joining..." : "Join"}
+            <Button type="submit" className="w-full">
+              Join
             </Button>
           </CardFooter>
         </form>

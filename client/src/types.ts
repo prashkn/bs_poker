@@ -20,6 +20,7 @@ export interface Claim {
 export interface PlayerInfo {
   id: string;
   name: string;
+  connected: boolean;
 }
 
 export interface PlayerState extends PlayerInfo {
@@ -37,6 +38,13 @@ export interface BSResult {
   loser_id: string;
 }
 
+// Room settings (matches server RoomSettings)
+
+export interface RoomSettings {
+  time_per_turn: number;
+  max_cards_before_elimination: number;
+}
+
 // Game state
 
 export type Phase = "lobby" | "playing" | "game_over";
@@ -45,6 +53,7 @@ export interface GameState {
   // Room
   players: Map<string, PlayerState>;
   hostId: string;
+  settings: RoomSettings | null;
 
   // Game
   phase: Phase;
@@ -60,4 +69,7 @@ export interface GameState {
 
   // End state
   winnerId: string | null;
+
+  // Error
+  lastError: string | null;
 }

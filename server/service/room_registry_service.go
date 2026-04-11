@@ -66,7 +66,7 @@ func (r *roomRegistryService) CreateRoom(password string) *game.Room {
 	r.rooms[id] = &game.Room{
 		ID:       id,
 		Password: password,
-		Players:  []*game.Player{},
+		Players:  make(map[uuid.UUID]*game.Player),
 		Settings: game.RoomSettings{
 			TimePerTurn:               30 * time.Second,
 			MaxCardsBeforeElimination: 6,
@@ -103,10 +103,11 @@ func (r *roomRegistryService) AddPlayerToRoom(roomID string, player *game.Player
 		room.HostID = player.ID
 	}
 
-	room.Players = append(room.Players, player)
+	room.Players[player.ID] = player
 	return nil
 }
 
+// RemovePlayerFromRoom removes a player from the room. Returns true if the host was removed and a new host was assigned.
 func (r *roomRegistryService) RemovePlayerFromRoom(roomID string, playerID uuid.UUID) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -116,21 +117,18 @@ func (r *roomRegistryService) RemovePlayerFromRoom(roomID string, playerID uuid.
 		return false, ErrRoomNotFound
 	}
 
-	for i, p := range room.Players {
-		if p.ID == playerID {
-			room.Players = append(room.Players[:i], room.Players[i+1:]...)
+	delete(room.Players, playerID)
 
-			// If the leaving player was the host and there are remaining players, migrate host.
-			if room.HostID == playerID && len(room.Players) > 0 {
-				room.HostID = room.Players[0].ID
-				return true, nil
-			}
-
-			return false, nil
+	if room.HostID == playerID {
+		for _, p := range room.Players {
+			room.HostID = p.ID
+			return true, nil
 		}
+		// no players left, reset host
+		room.HostID = uuid.Nil
 	}
 
-	return false, ErrPlayerNotFound
+	return false, nil
 }
 
 func (r *roomRegistryService) GetPlayerInRoom(roomID string, playerID uuid.UUID) (*game.Player, error) {
@@ -142,13 +140,12 @@ func (r *roomRegistryService) GetPlayerInRoom(roomID string, playerID uuid.UUID)
 		return nil, ErrRoomNotFound
 	}
 
-	for _, p := range room.Players {
-		if p.ID == playerID {
-			return p, nil
-		}
+	player, ok := room.Players[playerID]
+	if !ok {
+		return nil, ErrPlayerNotFound
 	}
 
-	return nil, ErrPlayerNotFound
+	return player, nil
 }
 
 // CleanupEmptyRooms periodically removes rooms with no players.
@@ -172,5 +169,9 @@ func generateRoomID() string {
 	wordLen := len(words)
 
 	// ex: "blue-sky-apple"
-	return strings.Join([]string{words[rand.Intn(wordLen)], words[rand.Intn(wordLen)], words[rand.Intn(wordLen)]}, "-")
+	roomIDArr := []string{}
+	for i := 0; i < 3; i++ {
+		roomIDArr = append(roomIDArr, words[rand.Intn(wordLen)])
+	}
+	return strings.Join(roomIDArr, "-")
 }

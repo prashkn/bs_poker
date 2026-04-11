@@ -8,15 +8,18 @@ import (
 	"github.com/prashkn/bs-poker/server/game"
 )
 
-func newTestRoom(numPlayers int) *game.Room {
+// newTestRoom creates a room with N players stored in the map.
+// Returns the room and an ordered slice of player IDs for deterministic access.
+func newTestRoom(numPlayers int) (*game.Room, []uuid.UUID) {
 	room := &game.Room{
 		ID: "test-room",
 		Settings: game.RoomSettings{
 			TimePerTurn:               30 * time.Second,
 			MaxCardsBeforeElimination: 6,
 		},
-		Players: make([]*game.Player, 0, numPlayers),
+		Players: make(map[uuid.UUID]*game.Player, numPlayers),
 	}
+	ids := make([]uuid.UUID, 0, numPlayers)
 	for i := 0; i < numPlayers; i++ {
 		p := &game.Player{
 			ID:        uuid.New(),
@@ -25,10 +28,11 @@ func newTestRoom(numPlayers int) *game.Room {
 			CardCount: 2,
 			SendCh:    make(chan []byte, 256),
 		}
-		room.Players = append(room.Players, p)
+		room.Players[p.ID] = p
+		ids = append(ids, p.ID)
 	}
-	room.HostID = room.Players[0].ID
-	return room
+	room.HostID = ids[0]
+	return room, ids
 }
 
 // --- VerifyClaim ---
@@ -91,7 +95,7 @@ func TestVerifyClaim_DuplicateCards(t *testing.T) {
 // --- StartGame ---
 
 func TestStartGame_Success(t *testing.T) {
-	room := newTestRoom(3)
+	room, _ := newTestRoom(3)
 	err := StartGame(room, room.HostID)
 	if err != nil {
 		t.Fatalf("StartGame failed: %v", err)
@@ -119,15 +123,15 @@ func TestStartGame_Success(t *testing.T) {
 }
 
 func TestStartGame_NotHost(t *testing.T) {
-	room := newTestRoom(2)
-	err := StartGame(room, room.Players[1].ID)
+	room, ids := newTestRoom(2)
+	err := StartGame(room, ids[1])
 	if err != ErrNotHost {
 		t.Errorf("expected ErrNotHost, got %v", err)
 	}
 }
 
 func TestStartGame_NotEnoughPlayers(t *testing.T) {
-	room := newTestRoom(1)
+	room, _ := newTestRoom(1)
 	err := StartGame(room, room.HostID)
 	if err != ErrNotEnoughPlayers {
 		t.Errorf("expected ErrNotEnoughPlayers, got %v", err)
@@ -137,7 +141,7 @@ func TestStartGame_NotEnoughPlayers(t *testing.T) {
 // --- MakeClaim ---
 
 func TestMakeClaim_Success(t *testing.T) {
-	room := newTestRoom(2)
+	room, _ := newTestRoom(2)
 	_ = StartGame(room, room.HostID)
 
 	currentPlayerID := room.Session.TurnOrder[room.Session.CurrentTurn]
@@ -160,7 +164,7 @@ func TestMakeClaim_Success(t *testing.T) {
 }
 
 func TestMakeClaim_WrongTurn(t *testing.T) {
-	room := newTestRoom(2)
+	room, _ := newTestRoom(2)
 	_ = StartGame(room, room.HostID)
 
 	// Find the player who is NOT the current turn
@@ -185,7 +189,7 @@ func TestMakeClaim_WrongTurn(t *testing.T) {
 }
 
 func TestMakeClaim_MustBeStronger(t *testing.T) {
-	room := newTestRoom(2)
+	room, _ := newTestRoom(2)
 	_ = StartGame(room, room.HostID)
 
 	// First claim: pair of aces
@@ -214,15 +218,15 @@ func TestMakeClaim_MustBeStronger(t *testing.T) {
 // --- CallBS ---
 
 func TestCallBS_ClaimInvalid(t *testing.T) {
-	room := newTestRoom(2)
+	room, ids := newTestRoom(2)
 	_ = StartGame(room, room.HostID)
 
 	p1 := room.Session.TurnOrder[room.Session.CurrentTurn]
-	room.Players[0].Hand = []game.Card{
+	room.Players[ids[0]].Hand = []game.Card{
 		{Suit: game.Hearts, Value: game.Two},
 		{Suit: game.Clubs, Value: game.Three},
 	}
-	room.Players[1].Hand = []game.Card{
+	room.Players[ids[1]].Hand = []game.Card{
 		{Suit: game.Diamonds, Value: game.Four},
 		{Suit: game.Spades, Value: game.Five},
 	}
@@ -253,17 +257,17 @@ func TestCallBS_ClaimInvalid(t *testing.T) {
 }
 
 func TestCallBS_ClaimValid(t *testing.T) {
-	room := newTestRoom(2)
+	room, ids := newTestRoom(2)
 	_ = StartGame(room, room.HostID)
 
 	p1 := room.Session.TurnOrder[room.Session.CurrentTurn]
 
 	// Set up hands so the claim is valid
-	room.Players[0].Hand = []game.Card{
+	room.Players[ids[0]].Hand = []game.Card{
 		{Suit: game.Hearts, Value: game.Ace},
 		{Suit: game.Clubs, Value: game.King},
 	}
-	room.Players[1].Hand = []game.Card{
+	room.Players[ids[1]].Hand = []game.Card{
 		{Suit: game.Spades, Value: game.Ace},
 		{Suit: game.Diamonds, Value: game.Queen},
 	}
@@ -293,7 +297,7 @@ func TestCallBS_ClaimValid(t *testing.T) {
 }
 
 func TestCallBS_Elimination(t *testing.T) {
-	room := newTestRoom(2)
+	room, ids := newTestRoom(2)
 	room.Settings.MaxCardsBeforeElimination = 3
 
 	_ = StartGame(room, room.HostID)
@@ -301,11 +305,11 @@ func TestCallBS_Elimination(t *testing.T) {
 	p1 := room.Session.TurnOrder[room.Session.CurrentTurn]
 
 	// Set hands so claim is invalid → p1 (claimer) loses
-	room.Players[0].Hand = []game.Card{
+	room.Players[ids[0]].Hand = []game.Card{
 		{Suit: game.Hearts, Value: game.Two},
 		{Suit: game.Clubs, Value: game.Three},
 	}
-	room.Players[1].Hand = []game.Card{
+	room.Players[ids[1]].Hand = []game.Card{
 		{Suit: game.Diamonds, Value: game.Four},
 		{Suit: game.Spades, Value: game.Five},
 	}
@@ -337,20 +341,20 @@ func TestCallBS_Elimination(t *testing.T) {
 }
 
 func TestCallBS_NewRound(t *testing.T) {
-	room := newTestRoom(3)
+	room, ids := newTestRoom(3)
 	_ = StartGame(room, room.HostID)
 
 	p1 := room.Session.TurnOrder[room.Session.CurrentTurn]
 
-	room.Players[0].Hand = []game.Card{
+	room.Players[ids[0]].Hand = []game.Card{
 		{Suit: game.Hearts, Value: game.Two},
 		{Suit: game.Clubs, Value: game.Three},
 	}
-	room.Players[1].Hand = []game.Card{
+	room.Players[ids[1]].Hand = []game.Card{
 		{Suit: game.Diamonds, Value: game.Four},
 		{Suit: game.Spades, Value: game.Five},
 	}
-	room.Players[2].Hand = []game.Card{
+	room.Players[ids[2]].Hand = []game.Card{
 		{Suit: game.Hearts, Value: game.Six},
 		{Suit: game.Clubs, Value: game.Seven},
 	}

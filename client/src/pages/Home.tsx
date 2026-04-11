@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useCreateRoom, useJoinRoom } from "@/api/room";
+import { CreateRoomRequest, JoinRoomRequest, useCreateRoom, useJoinRoom } from "@/api/room";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -34,8 +34,8 @@ export default function Home() {
       toast.error("All fields are required to join.", { position: "top-center" });
       return;
     }
-    joinRoom.mutate(
-      { room_id: joinRoomId, password: joinPassword, player_name: joinName },
+    const joinRoomReq: JoinRoomRequest = { room_id: joinRoomId, password: joinPassword, player_name: joinName };
+    joinRoom.mutate(joinRoomReq,
       {
         onSuccess: (data) => {
           sessionStorage.setItem(`player_id:${data.room_id}`, data.player_id);
@@ -54,8 +54,8 @@ export default function Home() {
       toast.error("All fields are required to create a room.", { position: "top-center" });
       return;
     }
-    createRoom.mutate(
-      { password: createPassword, host_name: createName },
+    const createRoomReq: CreateRoomRequest = { password: createPassword, host_name: createName };
+    createRoom.mutate(createRoomReq,
       {
         onSuccess: (data) => {
           sessionStorage.setItem(`player_id:${data.room_id}`, data.player_id);
@@ -111,8 +111,8 @@ export default function Home() {
               </Field>
             </CardContent>
             <CardFooter>
-              <Button type="submit" className="w-full" disabled={joinRoom.isPending}>
-                {joinRoom.isPending ? "Joining..." : "Join"}
+              <Button type="submit" className="w-full">
+                Join
               </Button>
             </CardFooter>
           </form>

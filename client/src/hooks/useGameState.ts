@@ -7,11 +7,13 @@ import type {
   Claim,
   Card,
   BSResult,
+  RoomSettings,
 } from "@/types";
 
 const initialState: GameState = {
   players: new Map(),
   hostId: "",
+  settings: null,
   phase: "lobby",
   round: 0,
   myHand: [],
@@ -21,6 +23,7 @@ const initialState: GameState = {
   previousClaims: [],
   lastBSResult: null,
   winnerId: null,
+  lastError: null,
 };
 
 type Action = { type: string; payload: Record<string, unknown> };
@@ -43,6 +46,7 @@ function gameReducer(state: GameState, action: Action): GameState {
         ...state,
         players,
         hostId: p.host_id as string,
+        settings: (p.settings as RoomSettings) ?? null,
         phase: "lobby",
       };
     }
@@ -52,6 +56,7 @@ function gameReducer(state: GameState, action: Action): GameState {
       players.set(p.player_id as string, {
         id: p.player_id as string,
         name: p.name as string,
+        connected: true,
         isAlive: true,
         cardCount: 0,
       });
@@ -64,8 +69,29 @@ function gameReducer(state: GameState, action: Action): GameState {
       return { ...state, players };
     }
 
+    case "player_disconnected": {
+      const players = new Map(state.players);
+      const player = players.get(p.player_id as string);
+      if (player) {
+        players.set(p.player_id as string, { ...player, connected: false });
+      }
+      return { ...state, players };
+    }
+
+    case "player_reconnected": {
+      const players = new Map(state.players);
+      const player = players.get(p.player_id as string);
+      if (player) {
+        players.set(p.player_id as string, { ...player, connected: true });
+      }
+      return { ...state, players };
+    }
+
     case "host_changed":
       return { ...state, hostId: p.player_id as string };
+
+    case "settings_updated":
+      return { ...state, settings: p.settings as RoomSettings };
 
     case "game_started":
       return {
@@ -144,6 +170,9 @@ function gameReducer(state: GameState, action: Action): GameState {
         phase: "game_over",
         winnerId: p.winner_id as string,
       };
+
+    case "error_message":
+      return { ...state, lastError: p.message as string };
 
     default:
       return state;

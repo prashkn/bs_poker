@@ -51,6 +51,6 @@ func handleCreateRoom(registry service.RoomRegistryService) http.HandlerFunc {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(createRoomResponse{RoomID: room.ID, HostID: host.ID})
 
-		log.Printf("Created room %s with host %s", room.ID, host.Name)
+		log.Printf("Created room %s with host %s (%s)", room.ID, host.Name, host.ID)
 	}
 }

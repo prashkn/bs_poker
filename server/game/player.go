@@ -12,9 +12,9 @@ type Player struct {
 	Hand      []Card          `json:"hand,omitempty"`
 	IsAlive   bool            `json:"is_alive"`
 	CardCount int             `json:"card_count"`
-	Conn      *websocket.Conn `json:"-"`
-	SendCh    chan []byte     `json:"-"`
-	Done      chan struct{}   `json:"-"`
+	Conn      *websocket.Conn `json:"-"` // WebSocket connection, not serialized
+	SendCh    chan []byte     `json:"-"` // Channel for sending messages to the player, not serialized
+	Done      chan struct{}   `json:"-"` // Channel to signal player disconnection, not serialized
 }
 
 func NewPlayer(name string) *Player {
