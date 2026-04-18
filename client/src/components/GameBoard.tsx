@@ -17,11 +17,11 @@ export default function GameBoard() {
   const currentPlayer = players.get(currentTurnPlayerId);
 
   function handleClaim(madeHand: MadeHand) {
-    send({ event: "claim", payload: { made_hand: madeHand } });
+    send("claim", { made_hand: madeHand });
   }
 
   function handleCallBS() {
-    send({ event: "call_bs", payload: {} });
+    send("call_bs", {});
   }
 
   return (

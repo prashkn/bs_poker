@@ -49,6 +49,54 @@ export interface RoomSettings {
 
 export type Phase = "lobby" | "playing" | "game_over";
 
+// Server -> Client event payloads. Add a new entry here when the server starts
+// emitting a new event; that's the only place a wire-level change needs to
+// land to become type-safe everywhere it's subscribed.
+export type ServerEventMap = {
+  room_state: {
+    host_id: string;
+    players: PlayerInfo[];
+    password?: string;
+    settings?: RoomSettings;
+  };
+  player_joined: { player_id: string; name: string };
+  player_left: { player_id: string };
+  player_disconnected: { player_id: string };
+  player_reconnected: { player_id: string };
+  host_changed: { player_id: string };
+  settings_updated: { settings: RoomSettings };
+  chat_received: { player_id: string; name: string; text: string };
+  game_started: {
+    hand: Card[];
+    round: number;
+    turn_order: string[];
+    current_turn: string;
+    card_counts: Record<string, number>;
+  };
+  turn: { player_id: string };
+  claim_made: { player_id: string; made_hand: MadeHand };
+  bs_called: Record<string, never>;
+  bs_result: BSResult;
+  round_started: { round: number; hand: Card[] };
+  player_eliminated: { player_id: string };
+  game_over: { winner_id: string };
+  error_message: { message: string };
+};
+
+export type ServerEvent = keyof ServerEventMap;
+
+// Client -> Server event payloads. Mirrors the handlers in server/handler_ws_events.go.
+export type ClientEventMap = {
+  chat: { text: string };
+  start_game: Record<string, never>;
+  claim: { made_hand: MadeHand };
+  call_bs: Record<string, never>;
+  kick_player: { player_id: string };
+  update_settings: { settings: RoomSettings };
+};
+
+export type ClientEvent = keyof ClientEventMap;
+
 export interface GameState {
   // Room
   players: Map<string, PlayerState>;

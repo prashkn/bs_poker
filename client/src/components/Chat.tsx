@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useChat, usePlayers } from "@/hooks/useRoom";
+import { useServerEvent } from "@/hooks/useServerEvent";
 import { avatarUrl } from "@/lib/avatar";
 
 interface ChatEntry {
@@ -46,39 +47,28 @@ function groupMessages(entries: ChatEntry[]): MessageGroup[] {
 }
 
 export default function Chat() {
-  const { messages, connected, send } = useChat();
+  const { connected, send } = useChat();
   const { players, playerId } = usePlayers();
   const myName = players.find((p) => p.id === playerId)?.name ?? "you";
   const [chatInput, setChatInput] = useState("");
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useServerEvent("chat_received", ({ player_id, name, text }) => {
+    setEntries((prev) => [
+      ...prev,
+      { playerId: player_id, name, text, isMe: false },
+    ]);
+  });
+
   function handleSendChat(e: FormEvent) {
     e.preventDefault();
     const text = chatInput.trim();
     if (!text) return;
-    send({ event: "chat", payload: { text } });
+    send("chat", { text });
     setEntries((prev) => [...prev, { playerId, name: myName, text, isMe: true }]);
     setChatInput("");
   }
-
-  const lastProcessed = useRef(0);
-  useEffect(() => {
-    const newMessages = messages.slice(lastProcessed.current);
-    lastProcessed.current = messages.length;
-    for (const msg of newMessages) {
-      if (msg.event !== "chat_received") continue;
-      setEntries((prev) => [
-        ...prev,
-        {
-          playerId: msg.payload.player_id as string,
-          name: msg.payload.name as string,
-          text: msg.payload.text as string,
-          isMe: false,
-        },
-      ]);
-    }
-  }, [messages]);
 
   useEffect(() => {
     const el = scrollRef.current;

@@ -49,7 +49,7 @@ export default function PlayerList() {
                     variant="ghost"
                     size="icon"
                     className="ml-auto h-5 w-5 text-muted-foreground hover:text-destructive"
-                    onClick={() => send({ event: "kick_player", payload: { player_id: p.id } })}
+                    onClick={() => send("kick_player", { player_id: p.id })}
                   >
                     <XIcon className="h-3 w-3" />
                   </Button>
@@ -64,7 +64,7 @@ export default function PlayerList() {
           <Button
             className="w-full"
             disabled={!connected || players.length < 2}
-            onClick={() => send({ event: "start_game", payload: {} })}
+            onClick={() => send("start_game", {})}
           >
             Start Game
           </Button>

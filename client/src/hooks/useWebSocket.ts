@@ -1,13 +1,44 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ClientEvent,
+  ClientEventMap,
+  ServerEvent,
+  ServerEventMap,
+} from "@/types";
 
-export interface WSMessage {
-  event: string;
-  payload: Record<string, unknown>;
+export class TypedEmitter<M> {
+  private listeners = new Map<keyof M, Set<(payload: unknown) => void>>();
+
+  on<K extends keyof M>(event: K, handler: (payload: M[K]) => void): () => void {
+    let set = this.listeners.get(event);
+    if (!set) {
+      set = new Set();
+      this.listeners.set(event, set);
+    }
+    const wrapped = (p: unknown) => handler(p as M[K]);
+    set.add(wrapped);
+    return () => {
+      this.listeners.get(event)?.delete(wrapped);
+    };
+  }
+
+  emit<K extends keyof M>(event: K, payload: M[K]): void {
+    const set = this.listeners.get(event);
+    if (!set) return;
+    for (const handler of set) handler(payload);
+  }
 }
+
+export type ServerEmitter = TypedEmitter<ServerEventMap>;
+
+export type SendFn = <K extends ClientEvent>(
+  event: K,
+  payload: ClientEventMap[K],
+) => void;
 
 export function useWebSocket(roomId: string, playerId: string) {
   const wsRef = useRef<WebSocket | null>(null);
-  const [messages, setMessages] = useState<WSMessage[]>([]);
+  const emitter = useMemo<ServerEmitter>(() => new TypedEmitter<ServerEventMap>(), []);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -32,8 +63,11 @@ export function useWebSocket(roomId: string, playerId: string) {
 
     ws.onmessage = (event) => {
       try {
-        const msg: WSMessage = JSON.parse(event.data);
-        setMessages((prev) => [...prev, msg]);
+        const msg = JSON.parse(event.data) as {
+          event: ServerEvent;
+          payload: unknown;
+        };
+        emitter.emit(msg.event, msg.payload as ServerEventMap[ServerEvent]);
       } catch {
         console.error("failed to parse ws message:", event.data);
       }
@@ -47,13 +81,13 @@ export function useWebSocket(roomId: string, playerId: string) {
     return () => {
       ws.close();
     };
-  }, [roomId, playerId]);
+  }, [roomId, playerId, emitter]);
 
-  const send = useCallback((msg: WSMessage) => {
+  const send = useCallback<SendFn>((event, payload) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(msg));
+      wsRef.current.send(JSON.stringify({ event, payload }));
     }
   }, []);
 
-  return { messages, connected, send };
+  return { emitter, connected, send };
 }

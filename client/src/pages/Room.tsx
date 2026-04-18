@@ -4,7 +4,7 @@ import axios from "axios";
 import { Loader2 } from "lucide-react";
 import { useGetRoom, useJoinRoom } from "@/api/room";
 import JoinRoomModal from "@/components/JoinRoomModal";
-import Lobby from "@/components/Lobby";
+import RoomRouter from "@/components/RoomRouter";
 import { RoomProvider } from "@/hooks/useRoom";
 import { playerIdKey } from "@/lib/storage";
 import { toast } from "sonner";
@@ -56,7 +56,7 @@ export default function Room() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         ) : ready ? (
           <RoomProvider roomId={roomId!} playerId={playerId}>
-            <Lobby />
+            <RoomRouter />
           </RoomProvider>
         ) : null}
       </div>

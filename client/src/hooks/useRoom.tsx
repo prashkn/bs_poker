@@ -1,5 +1,16 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { useWebSocket, type WSMessage } from "./useWebSocket";
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import {
+  useWebSocket,
+  type SendFn,
+  type ServerEmitter,
+} from "./useWebSocket";
 import { useGameState } from "./useGameState";
 
 type GameSlice = ReturnType<typeof useGameState>;
@@ -9,12 +20,12 @@ interface RoomContextValue {
   playerId: string;
   password: string;
   connected: boolean;
-  messages: WSMessage[];
-  send: (msg: WSMessage) => void;
+  emitter: ServerEmitter;
+  send: SendFn;
   game: GameSlice;
 }
 
-const RoomContext = createContext<RoomContextValue | null>(null);
+export const RoomContext = createContext<RoomContextValue | null>(null);
 
 interface RoomProviderProps {
   roomId: string;
@@ -23,26 +34,22 @@ interface RoomProviderProps {
 }
 
 export function RoomProvider({ roomId, playerId, children }: RoomProviderProps) {
-  const { messages, connected, send } = useWebSocket(roomId, playerId);
-  const game = useGameState(messages, playerId);
+  const { emitter, connected, send } = useWebSocket(roomId, playerId);
+  const game = useGameState(emitter, playerId);
 
-  // Track the latest non-empty password from room_state messages. Empty
-  // passwords (sent to non-hosts) don't overwrite — this matters for the
-  // host-migration case where a new host receives a targeted room_state.
+  // Hosts receive a non-empty password in room_state; non-hosts get "". Keep
+  // the latest non-empty value so host migration doesn't wipe the password
+  // the user has already seen.
   const [password, setPassword] = useState("");
   useEffect(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.event !== "room_state") continue;
-      const next = (m.payload.password as string) ?? "";
-      if (next) setPassword(next);
-      break;
-    }
-  }, [messages]);
+    return emitter.on("room_state", (payload) => {
+      if (payload.password) setPassword(payload.password);
+    });
+  }, [emitter]);
 
   const value = useMemo<RoomContextValue>(
-    () => ({ roomId, playerId, password, connected, messages, send, game }),
-    [roomId, playerId, password, connected, messages, send, game]
+    () => ({ roomId, playerId, password, connected, emitter, send, game }),
+    [roomId, playerId, password, connected, emitter, send, game],
   );
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>;
@@ -74,18 +81,20 @@ export function usePlayers() {
 }
 
 export function useChat() {
-  const { messages, connected, send } = useRoomContext();
-  return { messages, connected, send };
+  const { connected, send } = useRoomContext();
+  return { connected, send };
 }
 
 export function useGame() {
   const { game } = useRoomContext();
   return {
+    phase: game.phase,
     currentTurnPlayerId: game.currentTurnPlayerId,
     players: game.players,
     isMyTurn: game.isMyTurn,
     canCallBS: game.canCallBS,
     myHand: game.myHand,
     round: game.round,
+    winnerId: game.winnerId,
   };
 }

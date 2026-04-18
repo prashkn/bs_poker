@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useReducer } from "react";
-import type { WSMessage } from "./useWebSocket";
+import { useEffect, useMemo, useReducer } from "react";
+import type { ServerEmitter } from "./useWebSocket";
 import type {
   GameState,
-  PlayerInfo,
   PlayerState,
   Claim,
-  Card,
-  BSResult,
-  RoomSettings,
+  ServerEvent,
+  ServerEventMap,
 } from "@/types";
 
 const initialState: GameState = {
@@ -26,15 +24,38 @@ const initialState: GameState = {
   lastError: null,
 };
 
-type Action = { type: string; payload: Record<string, unknown> };
+// Events the game reducer cares about. Chat is subscribed to directly by the
+// Chat component and intentionally omitted.
+const HANDLED_EVENTS = [
+  "room_state",
+  "player_joined",
+  "player_left",
+  "player_disconnected",
+  "player_reconnected",
+  "host_changed",
+  "settings_updated",
+  "game_started",
+  "turn",
+  "claim_made",
+  "bs_called",
+  "bs_result",
+  "round_started",
+  "player_eliminated",
+  "game_over",
+  "error_message",
+] as const satisfies readonly ServerEvent[];
+
+type HandledEvent = (typeof HANDLED_EVENTS)[number];
+
+type Action = {
+  [K in HandledEvent]: { type: K; payload: ServerEventMap[K] };
+}[HandledEvent];
 
 function gameReducer(state: GameState, action: Action): GameState {
-  const p = action.payload;
-
   switch (action.type) {
     case "room_state": {
+      const { host_id, players: list, settings } = action.payload;
       const players = new Map<string, PlayerState>();
-      const list = p.players as PlayerInfo[];
       for (const player of list) {
         players.set(player.id, {
           ...player,
@@ -45,17 +66,18 @@ function gameReducer(state: GameState, action: Action): GameState {
       return {
         ...state,
         players,
-        hostId: p.host_id as string,
-        settings: (p.settings as RoomSettings) ?? null,
+        hostId: host_id,
+        settings: settings ?? null,
         phase: "lobby",
       };
     }
 
     case "player_joined": {
+      const { player_id, name } = action.payload;
       const players = new Map(state.players);
-      players.set(p.player_id as string, {
-        id: p.player_id as string,
-        name: p.name as string,
+      players.set(player_id, {
+        id: player_id,
+        name,
         connected: true,
         isAlive: true,
         cardCount: 0,
@@ -65,58 +87,66 @@ function gameReducer(state: GameState, action: Action): GameState {
 
     case "player_left": {
       const players = new Map(state.players);
-      players.delete(p.player_id as string);
+      players.delete(action.payload.player_id);
       return { ...state, players };
     }
 
     case "player_disconnected": {
       const players = new Map(state.players);
-      const player = players.get(p.player_id as string);
-      if (player) {
-        players.set(p.player_id as string, { ...player, connected: false });
+      const existing = players.get(action.payload.player_id);
+      if (existing) {
+        players.set(action.payload.player_id, { ...existing, connected: false });
       }
       return { ...state, players };
     }
 
     case "player_reconnected": {
       const players = new Map(state.players);
-      const player = players.get(p.player_id as string);
-      if (player) {
-        players.set(p.player_id as string, { ...player, connected: true });
+      const existing = players.get(action.payload.player_id);
+      if (existing) {
+        players.set(action.payload.player_id, { ...existing, connected: true });
       }
       return { ...state, players };
     }
 
     case "host_changed":
-      return { ...state, hostId: p.player_id as string };
+      return { ...state, hostId: action.payload.player_id };
 
     case "settings_updated":
-      return { ...state, settings: p.settings as RoomSettings };
+      return { ...state, settings: action.payload.settings };
 
-    case "game_started":
+    case "game_started": {
+      const { card_counts } = action.payload;
+      const players = new Map(state.players);
+      for (const [id, player] of players) {
+        players.set(id, {
+          ...player,
+          isAlive: true,
+          cardCount: card_counts[id] ?? 0,
+        });
+      }
       return {
         ...state,
+        players,
         phase: "playing",
-        round: 1,
-        myHand: p.hand as Card[],
-        turnOrder: p.turn_order as string[],
-        currentTurnPlayerId: "",
+        round: action.payload.round,
+        myHand: action.payload.hand,
+        turnOrder: action.payload.turn_order,
+        currentTurnPlayerId: action.payload.current_turn,
         currentClaim: null,
         previousClaims: [],
         lastBSResult: null,
         winnerId: null,
       };
+    }
 
     case "turn":
-      return {
-        ...state,
-        currentTurnPlayerId: p.player_id as string,
-      };
+      return { ...state, currentTurnPlayerId: action.payload.player_id };
 
     case "claim_made": {
       const claim: Claim = {
-        player_id: p.player_id as string,
-        made_hand: p.made_hand as Claim["made_hand"],
+        player_id: action.payload.player_id,
+        made_hand: action.payload.made_hand,
       };
       return {
         ...state,
@@ -129,7 +159,7 @@ function gameReducer(state: GameState, action: Action): GameState {
       return state;
 
     case "bs_result": {
-      const result = p as unknown as BSResult;
+      const result = action.payload;
       const players = new Map(state.players);
       const loser = players.get(result.loser_id);
       if (loser) {
@@ -144,8 +174,8 @@ function gameReducer(state: GameState, action: Action): GameState {
     case "round_started":
       return {
         ...state,
-        round: p.round as number,
-        myHand: p.hand as Card[],
+        round: action.payload.round,
+        myHand: action.payload.hand,
         currentTurnPlayerId: "",
         currentClaim: null,
         previousClaims: [],
@@ -154,12 +184,9 @@ function gameReducer(state: GameState, action: Action): GameState {
 
     case "player_eliminated": {
       const players = new Map(state.players);
-      const eliminated = players.get(p.player_id as string);
+      const eliminated = players.get(action.payload.player_id);
       if (eliminated) {
-        players.set(p.player_id as string, {
-          ...eliminated,
-          isAlive: false,
-        });
+        players.set(action.payload.player_id, { ...eliminated, isAlive: false });
       }
       return { ...state, players };
     }
@@ -168,34 +195,41 @@ function gameReducer(state: GameState, action: Action): GameState {
       return {
         ...state,
         phase: "game_over",
-        winnerId: p.winner_id as string,
+        winnerId: action.payload.winner_id,
       };
 
     case "error_message":
-      return { ...state, lastError: p.message as string };
+      return { ...state, lastError: action.payload.message };
 
-    default:
+    default: {
+      const _exhaustive: never = action;
+      void _exhaustive;
       return state;
+    }
   }
 }
 
-export function useGameState(messages: WSMessage[], playerId: string) {
+export function useGameState(emitter: ServerEmitter, playerId: string) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
-  const lastProcessed = useRef(0);
 
   useEffect(() => {
-    const newMessages = messages.slice(lastProcessed.current);
-    lastProcessed.current = messages.length;
-    for (const msg of newMessages) {
-      dispatch({ type: msg.event, payload: msg.payload });
-    }
-  }, [messages]);
+    const offs = HANDLED_EVENTS.map((event) =>
+      emitter.on(event, (payload) =>
+        dispatch({ type: event, payload } as Action),
+      ),
+    );
+    return () => offs.forEach((off) => off());
+  }, [emitter]);
 
-  const derived = useMemo(() => ({
-    isMyTurn: state.currentTurnPlayerId === playerId,
-    alivePlayers: Array.from(state.players.values()).filter((p) => p.isAlive),
-    canCallBS: state.currentTurnPlayerId === playerId && state.currentClaim !== null,
-  }), [state.currentTurnPlayerId, state.currentClaim, state.players, playerId]);
+  const derived = useMemo(
+    () => ({
+      isMyTurn: state.currentTurnPlayerId === playerId,
+      alivePlayers: Array.from(state.players.values()).filter((p) => p.isAlive),
+      canCallBS:
+        state.currentTurnPlayerId === playerId && state.currentClaim !== null,
+    }),
+    [state.currentTurnPlayerId, state.currentClaim, state.players, playerId],
+  );
 
   return { ...state, ...derived };
 }
