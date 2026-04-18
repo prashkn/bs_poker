@@ -20,11 +20,9 @@ const (
 	MessageTypeUpdateSettings MessageEvent = "update_settings"
 
 	// Server -> Client
-	MessageTypeRoomState    MessageEvent = "room_state"
-	MessageTypePlayerJoined MessageEvent = "player_joined"
-	MessageTypePlayerLeft   MessageEvent = "player_left"
-	// MessageTypePlayerDisconnected MessageEvent = "player_disconnected"
-	// MessageTypePlayerReconnected  MessageEvent = "player_reconnected"
+	MessageTypeRoomState        MessageEvent = "room_state"
+	MessageTypePlayerJoined     MessageEvent = "player_joined"
+	MessageTypePlayerLeft       MessageEvent = "player_left"
 	MesssageTypeHostChanged     MessageEvent = "host_changed"
 	MessageTypeGameStarted      MessageEvent = "game_started"
 	MessageTypeTurn             MessageEvent = "turn"
@@ -72,6 +70,16 @@ func newMessage(event MessageEvent, payload any) []byte {
 
 // Server -> Client message constructors
 
+func NewGameStartedMessage(hand []Card, currentTurn uuid.UUID, round int, turnOrder []uuid.UUID, cardCounts map[uuid.UUID]int) []byte {
+	return newMessage(MessageTypeGameStarted, map[string]any{
+		"hand":         hand,
+		"current_turn": currentTurn.String(),
+		"round":        round,
+		"turn_order":   turnOrder,
+		"card_counts":  cardCounts,
+	})
+}
+
 func NewPlayerJoinedMessage(playerID uuid.UUID, name string) []byte {
 	return newMessage(MessageTypePlayerJoined, map[string]any{
 		"player_id": playerID.String(),
@@ -85,21 +93,15 @@ func NewPlayerLeftMessage(playerID uuid.UUID) []byte {
 	})
 }
 
-// func NewPlayerDisconnectedMessage(playerID uuid.UUID) []byte {
-// 	return newMessage(MessageTypePlayerDisconnected, map[string]any{
-// 		"player_id": playerID.String(),
-// 	})
-// }
-
-// func NewPlayerReconnectedMessage(playerID uuid.UUID) []byte {
-// 	return newMessage(MessageTypePlayerReconnected, map[string]any{
-// 		"player_id": playerID.String(),
-// 	})
-// }
-
 func NewHostChangedMessage(playerID uuid.UUID) []byte {
 	return newMessage(MesssageTypeHostChanged, map[string]any{
 		"player_id": playerID.String(),
+	})
+}
+
+func NewErrorMessage(message string) []byte {
+	return newMessage(MessageTypeErrorMessage, map[string]any{
+		"message": message,
 	})
 }
 

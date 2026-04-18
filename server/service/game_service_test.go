@@ -155,10 +155,10 @@ func TestMakeClaim_Success(t *testing.T) {
 		t.Fatalf("MakeClaim failed: %v", err)
 	}
 
-	if room.Session.CurrentClaim == nil {
+	if room.Session.LastClaim == nil {
 		t.Fatal("current claim should be set")
 	}
-	if room.Session.CurrentClaim.PlayerID != currentPlayerID {
+	if room.Session.LastClaim.PlayerID != currentPlayerID {
 		t.Error("claim player ID mismatch")
 	}
 }
@@ -380,7 +380,7 @@ func TestCallBS_NewRound(t *testing.T) {
 	if room.Session.Round != 2 {
 		t.Errorf("expected round 2, got %d", room.Session.Round)
 	}
-	if room.Session.CurrentClaim != nil {
+	if room.Session.LastClaim != nil {
 		t.Error("current claim should be nil after new round")
 	}
 

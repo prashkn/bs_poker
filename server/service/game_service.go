@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"math/rand/v2"
 
 	"github.com/google/uuid"
 	"github.com/prashkn/bs-poker/server/game"
@@ -10,7 +9,7 @@ import (
 
 var (
 	ErrNotHost           = errors.New("only the host can start the game")
-	ErrNotEnoughPlayers  = errors.New("need at least 2 alive players")
+	ErrNotEnoughPlayers  = errors.New("need at least 2 players")
 	ErrGameAlreadyActive = errors.New("a game is already in progress")
 	ErrNoActiveGame      = errors.New("no active game")
 	ErrNotYourTurn       = errors.New("it is not your turn")
@@ -21,14 +20,14 @@ var (
 )
 
 type BSResult struct {
-	Caller     uuid.UUID                   `json:"caller_id"`
-	Claimer    uuid.UUID                   `json:"claimer_id"`
-	ClaimValid bool                        `json:"claim_valid"`
-	LoserID    uuid.UUID                   `json:"loser_id"`
+	Caller     uuid.UUID                 `json:"caller_id"`
+	Claimer    uuid.UUID                 `json:"claimer_id"`
+	ClaimValid bool                      `json:"claim_valid"`
+	LoserID    uuid.UUID                 `json:"loser_id"`
 	AllHands   map[uuid.UUID][]game.Card `json:"all_hands"`
-	Eliminated bool                        `json:"eliminated"`
-	GameOver   bool                        `json:"game_over"`
-	WinnerID   uuid.UUID                   `json:"winner_id,omitempty"`
+	Eliminated bool                      `json:"eliminated"`
+	GameOver   bool                      `json:"game_over"`
+	WinnerID   uuid.UUID                 `json:"winner_id,omitempty"`
 }
 
 // StartGame initializes a new game in the room. Caller must hold room.Mu.
@@ -36,46 +35,44 @@ func StartGame(room *game.Room, playerID uuid.UUID) error {
 	if playerID != room.HostID {
 		return ErrNotHost
 	}
-	if room.Session != nil &&
-		room.Session.SM.Current != game.StateGameOver &&
-		room.Session.SM.Current != game.StateLobby {
+	if room.Session != nil && room.Session.SM.Current != game.StateGameOver {
 		return ErrGameAlreadyActive
 	}
-
-	alivePlayers := getAlivePlayers(room)
-	if len(alivePlayers) < 2 {
+	if len(room.Players) < 2 {
 		return ErrNotEnoughPlayers
 	}
 
-	// Build turn order (shuffled)
-	turnOrder := make([]uuid.UUID, len(alivePlayers))
-	for i, p := range alivePlayers {
-		turnOrder[i] = p.ID
+	// Reset every player for a fresh game
+	for _, p := range room.Players {
+		p.IsAlive = true
+		p.CardCount = 2
+		p.Hand = []game.Card{}
 	}
-	rand.Shuffle(len(turnOrder), func(i, j int) {
-		turnOrder[i], turnOrder[j] = turnOrder[j], turnOrder[i]
-	})
 
-	// Create and shuffle deck, deal cards
+	// Build turn order
+	turnOrder := make([]uuid.UUID, 0, len(room.Players))
+	for _, p := range room.Players {
+		turnOrder = append(turnOrder, p.ID)
+	}
+
+	// Create and shuffle deck
 	deck := game.NewDeck()
 	game.ShuffleDeck(deck)
 
-	for _, p := range alivePlayers {
+	// Deal cards
+	for _, p := range room.Players {
 		var dealt []game.Card
 		deck, dealt = game.Deal(deck, p.CardCount)
 		p.Hand = dealt
 	}
 
-	sm := game.NewStateMachine()
-	sm.Apply(game.TransitionNewRound) // Lobby -> NewRound
-
 	room.Session = &game.Session{
-		Deck:         deck,
-		Round:        1,
-		TurnOrder:    turnOrder,
-		CurrentTurn:  0,
-		CurrentClaim: nil,
-		SM:           sm,
+		Deck:        deck,
+		Round:       1,
+		TurnOrder:   turnOrder,
+		CurrentTurn: 0,
+		LastClaim:   nil,
+		SM:          game.NewStateMachine(),
 	}
 
 	return nil
@@ -87,7 +84,7 @@ func MakeClaim(room *game.Room, playerID uuid.UUID, claim game.MadeHand) error {
 	if g == nil {
 		return ErrNoActiveGame
 	}
-	if !g.SM.Can(game.TransitionClaim) {
+	if !g.SM.CanMoveTo(game.TransitionClaim) {
 		return ErrWrongState
 	}
 	if g.TurnOrder[g.CurrentTurn] != playerID {
@@ -96,18 +93,18 @@ func MakeClaim(room *game.Room, playerID uuid.UUID, claim game.MadeHand) error {
 	if !claim.IsValid() {
 		return ErrInvalidClaim
 	}
-	if g.CurrentClaim != nil && !claim.IsStrongerThan(&g.CurrentClaim.MadeHand) {
+	if g.LastClaim != nil && !claim.IsStrongerThan(&g.LastClaim.MadeHand) {
 		return ErrClaimNotStronger
 	}
 
-	g.CurrentClaim = &game.Claim{
+	g.LastClaim = &game.Claim{
 		PlayerID: playerID,
 		MadeHand: claim,
 	}
 
 	// Advance to next alive player
 	g.CurrentTurn = nextAliveTurnIndex(room)
-	g.SM.Apply(game.TransitionClaim) // NewRound->Claim or Claim->Claim
+	g.SM.MoveTo(game.TransitionClaim) // NewRound->Claim or Claim->Claim
 
 	return nil
 }
@@ -118,17 +115,17 @@ func CallBS(room *game.Room, playerID uuid.UUID) (*BSResult, error) {
 	if g == nil {
 		return nil, ErrNoActiveGame
 	}
-	if !g.SM.Can(game.TransitionBSCall) {
+	if !g.SM.CanMoveTo(game.TransitionBSCall) {
 		return nil, ErrWrongState
 	}
 	if g.TurnOrder[g.CurrentTurn] != playerID {
 		return nil, ErrNotYourTurn
 	}
-	if g.CurrentClaim == nil {
+	if g.LastClaim == nil {
 		return nil, ErrNoClaim
 	}
 
-	g.SM.Apply(game.TransitionBSCall) // Claim -> BSCall
+	g.SM.MoveTo(game.TransitionBSCall) // Claim -> BSCall
 
 	// Collect all alive players' cards and build hands map
 	alivePlayers := getAlivePlayers(room)
@@ -141,14 +138,14 @@ func CallBS(room *game.Room, playerID uuid.UUID) (*BSResult, error) {
 		allHands[p.ID] = handCopy
 	}
 
-	claimValid := VerifyClaim(g.CurrentClaim.MadeHand, allCards)
+	claimValid := VerifyClaim(g.LastClaim.MadeHand, allCards)
 
 	// Determine loser
 	var loserID uuid.UUID
 	if claimValid {
 		loserID = playerID // caller loses
 	} else {
-		loserID = g.CurrentClaim.PlayerID // claimer loses
+		loserID = g.LastClaim.PlayerID // claimer loses
 	}
 
 	loser := FindPlayer(room, loserID)
@@ -156,13 +153,13 @@ func CallBS(room *game.Room, playerID uuid.UUID) (*BSResult, error) {
 
 	result := &BSResult{
 		Caller:     playerID,
-		Claimer:    g.CurrentClaim.PlayerID,
+		Claimer:    g.LastClaim.PlayerID,
 		ClaimValid: claimValid,
 		LoserID:    loserID,
 		AllHands:   allHands,
 	}
 
-	g.SM.Apply(game.TransitionBSResult) // BSCall -> BSResult
+	g.SM.MoveTo(game.TransitionBSResult) // BSCall -> BSResult
 
 	// Check elimination
 	if loser.CardCount >= room.Settings.MaxCardsBeforeElimination {
@@ -170,12 +167,12 @@ func CallBS(room *game.Room, playerID uuid.UUID) (*BSResult, error) {
 		result.Eliminated = true
 	}
 
-	g.SM.Apply(game.TransitionRoundEnd) // BSResult -> RoundEnd
+	g.SM.MoveTo(game.TransitionRoundEnd) // BSResult -> RoundEnd
 
 	// Check game over
 	alive := getAlivePlayers(room)
 	if len(alive) <= 1 {
-		g.SM.Apply(game.TransitionGameOver) // RoundEnd -> GameOver
+		g.SM.MoveTo(game.TransitionGameOver) // RoundEnd -> GameOver
 		result.GameOver = true
 		if len(alive) == 1 {
 			result.WinnerID = alive[0].ID
@@ -215,7 +212,7 @@ func VerifyClaim(claim game.MadeHand, allCards []game.Card) bool {
 func startNewRound(room *game.Room, loserID uuid.UUID) {
 	g := room.Session
 	g.Round++
-	g.CurrentClaim = nil
+	g.LastClaim = nil
 
 	// Create and shuffle a new deck
 	deck := game.NewDeck()
@@ -253,7 +250,7 @@ func startNewRound(room *game.Room, loserID uuid.UUID) {
 	// If loser was eliminated, current turn stays at their former position
 	// which now points to the next alive player (since we rebuilt TurnOrder)
 
-	g.SM.Apply(game.TransitionNewRound) // RoundEnd -> NewRound
+	g.SM.MoveTo(game.TransitionNewRound) // RoundEnd -> NewRound
 }
 
 // nextAliveTurnIndex returns the next turn index, skipping eliminated players.

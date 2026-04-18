@@ -10,7 +10,6 @@ import (
 type Player struct {
 	ID        uuid.UUID       `json:"id"`
 	Name      string          `json:"name"`
-	Room      *Room           `json:"-"`
 	Hand      []Card          `json:"hand,omitempty"`
 	IsAlive   bool            `json:"is_alive"`
 	CardCount int             `json:"card_count"`

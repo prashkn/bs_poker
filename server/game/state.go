@@ -6,8 +6,7 @@ import "fmt"
 type GameState int
 
 const (
-	StateLobby    GameState = iota
-	StateNewRound
+	StateNewRound GameState = iota
 	StateClaim
 	StateBSCall
 	StateBSResult
@@ -19,13 +18,12 @@ const (
 type Transition int
 
 const (
-	TransitionNewRound  Transition = iota // Lobby->NewRound, RoundEnd->NewRound
-	TransitionClaim                       // NewRound->Claim, Claim->Claim
-	TransitionBSCall                      // Claim->BSCall
-	TransitionBSResult                    // BSCall->BSResult
-	TransitionRoundEnd                    // BSResult->RoundEnd
-	TransitionGameOver                    // RoundEnd->GameOver
-	TransitionBackLobby                   // GameOver->Lobby
+	TransitionNewRound Transition = iota // RoundEnd->NewRound
+	TransitionClaim                      // NewRound->Claim, Claim->Claim
+	TransitionBSCall                     // Claim->BSCall
+	TransitionBSResult                   // BSCall->BSResult
+	TransitionRoundEnd                   // BSResult->RoundEnd
+	TransitionGameOver                   // RoundEnd->GameOver
 )
 
 type edge struct {
@@ -35,13 +33,12 @@ type edge struct {
 
 // graph is the adjacency list: transition -> allowed edges.
 var graph = map[Transition][]edge{
-	TransitionNewRound:  {{StateLobby, StateNewRound}, {StateRoundEnd, StateNewRound}},
-	TransitionClaim:     {{StateNewRound, StateClaim}, {StateClaim, StateClaim}},
-	TransitionBSCall:    {{StateClaim, StateBSCall}},
-	TransitionBSResult:  {{StateBSCall, StateBSResult}},
-	TransitionRoundEnd:  {{StateBSResult, StateRoundEnd}},
-	TransitionGameOver:  {{StateRoundEnd, StateGameOver}},
-	TransitionBackLobby: {{StateGameOver, StateLobby}},
+	TransitionNewRound: {{StateRoundEnd, StateNewRound}},
+	TransitionClaim:    {{StateNewRound, StateClaim}, {StateClaim, StateClaim}},
+	TransitionBSCall:   {{StateClaim, StateBSCall}},
+	TransitionBSResult: {{StateBSCall, StateBSResult}},
+	TransitionRoundEnd: {{StateBSResult, StateRoundEnd}},
+	TransitionGameOver: {{StateRoundEnd, StateGameOver}},
 }
 
 // StateMachine tracks current state and validates transitions.
@@ -49,13 +46,13 @@ type StateMachine struct {
 	Current GameState `json:"current"`
 }
 
-// NewStateMachine creates a state machine starting in StateLobby.
+// NewStateMachine creates a state machine starting in StateNewRound.
 func NewStateMachine() StateMachine {
-	return StateMachine{Current: StateLobby}
+	return StateMachine{Current: StateNewRound}
 }
 
-// Can reports whether the given transition is valid from the current state.
-func (sm *StateMachine) Can(t Transition) bool {
+// CanMoveTo reports whether the given transition is valid from the current state.
+func (sm *StateMachine) CanMoveTo(t Transition) bool {
 	for _, e := range graph[t] {
 		if e.From == sm.Current {
 			return true
@@ -64,9 +61,9 @@ func (sm *StateMachine) Can(t Transition) bool {
 	return false
 }
 
-// Apply performs the transition, moving to the target state.
+// MoveTo performs the transition, moving to the target state.
 // Returns an error if the transition is not valid from the current state.
-func (sm *StateMachine) Apply(t Transition) error {
+func (sm *StateMachine) MoveTo(t Transition) error {
 	for _, e := range graph[t] {
 		if e.From == sm.Current {
 			sm.Current = e.To
