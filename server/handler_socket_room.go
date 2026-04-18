@@ -19,14 +19,21 @@ var upgrader = websocket.Upgrader{
 
 // Websocket API Contracts:
 const (
-	paramRoomID   = "room_id"
+	paramRoomID   = "roomID"
 	paramPlayerID = "player_id"
 )
 
 func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("[ws] PANIC in handler: %v", rec)
+			}
+		}()
+
 		roomID := r.PathValue(paramRoomID)
 		playerIDStr := r.URL.Query().Get(paramPlayerID)
+		log.Printf("[ws] connect attempt room=%s player=%s", roomID, playerIDStr)
 
 		if roomID == "" {
 			http.Error(w, "room_id is required in path", http.StatusBadRequest)
@@ -44,80 +51,96 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 
 		room, err := registry.GetRoom(roomID)
 		if err != nil {
+			log.Printf("[ws] reject room=%s: room not found", roomID)
 			http.Error(w, "room not found", http.StatusNotFound)
 			return
 		}
 
 		player, err := registry.GetPlayerInRoom(roomID, playerID)
 		if playerIDStr != "" && err != nil {
+			log.Printf("[ws] reject room=%s player=%s: player not found", roomID, playerIDStr)
 			http.Error(w, "player not found in room", http.StatusNotFound)
 			return
 		}
 
 		if room.Session != nil {
+			log.Printf("[ws] reject room=%s player=%s: game in progress", roomID, playerIDStr)
 			http.Error(w, "cannot join room while game is in progress", http.StatusConflict)
 			return
 		}
+		log.Printf("[ws] accepting room=%s player=%s", roomID, playerIDStr)
 
-		// Tear down old connection before upgrading
-		close(player.Done)
-		if player.Conn != nil {
-			player.Conn.Close()
+		// Snapshot any prior connection, then close it to nudge the old readPump to exit.
+		// We don't touch player.Done here — each pump owns the Done it was started with,
+		// so the old pump will close its own Done in its defer.
+		player.Mu.Lock()
+		oldConn := player.Conn
+		player.Mu.Unlock()
+		if oldConn != nil {
+			oldConn.Close()
 		}
-		player.SendCh = make(chan []byte, 256)
-		player.Done = make(chan struct{})
 
 		// Upgrade to WebSocket
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Printf("websocket upgrade failed: %v", err)
+			log.Printf("[ws] upgrade failed room=%s player=%s: %v", roomID, playerIDStr, err)
 			return
 		}
+		log.Printf("[ws] upgraded room=%s player=%s", roomID, playerIDStr)
 
+		// Install fresh per-connection state. Pumps receive these as params
+		// and don't re-read player.SendCh/Done, so old pumps can't interfere.
+		sendCh := make(chan []byte, 256)
+		done := make(chan struct{})
+		player.Mu.Lock()
 		player.Conn = conn
+		player.SendCh = sendCh
+		player.Done = done
+		player.Mu.Unlock()
 
 		// Send room_state to the connecting player
-		sendToPlayer(player, buildRoomState(room))
+		sendToPlayer(player, buildRoomState(room, player.ID))
 
 		// Broadcast to other players
 		broadcastToRoom(room, game.NewPlayerJoinedMessage(player.ID, player.Name), player.ID)
 
 		// Start write goroutine, then run read loop blocking on this goroutine
-		go writePump(player)
-		readPump(player, room, registry)
+		go writePump(conn, sendCh, done)
+		readPump(player, conn, done, room, registry)
 	}
 }
 
-// writePump drains the player's SendCh and writes to the WebSocket connection.
-// Stops when Done is closed.
-func writePump(player *game.Player) {
+// writePump drains the connection's sendCh and writes to the WebSocket.
+// Pumps own their conn/channels as params so a newer connection swapping in
+// on player.* can't corrupt this pump's state.
+func writePump(conn *websocket.Conn, sendCh chan []byte, done chan struct{}) {
 	for {
 		select {
-		case msg, ok := <-player.SendCh:
+		case msg, ok := <-sendCh:
 			if !ok {
 				return
 			}
-			if err := player.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				log.Printf("write error for player %s: %v", player.ID, err)
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Printf("write error: %v", err)
 				return
 			}
-		case <-player.Done:
+		case <-done:
 			return
 		}
 	}
 }
 
-// readPump reads messages from the WebSocket and dispatches them.
-// Runs on the handler goroutine (blocking). Owns cleanup on exit.
-func readPump(player *game.Player, room *game.Room, registry service.RoomRegistryService) {
+// readPump reads messages from the WebSocket and dispatches them. Runs on the
+// handler goroutine (blocking). Owns cleanup for THIS connection on exit.
+func readPump(player *game.Player, conn *websocket.Conn, done chan struct{}, room *game.Room, registry service.RoomRegistryService) {
 	defer func() {
-		close(player.Done)
-		player.Conn.Close()
-		handlePlayerDisconnect(player, room, registry)
+		close(done)
+		conn.Close()
+		handlePlayerDisconnect(player, conn, room, registry)
 	}()
 
 	for {
-		_, msg, err := player.Conn.ReadMessage()
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("read error for player %s: %v", player.ID, err)
 			return
@@ -129,38 +152,34 @@ func readPump(player *game.Player, room *game.Room, registry service.RoomRegistr
 			continue
 		}
 
-		// TODO: wire up game event handlers
-		log.Printf("received event %q from player %s", message.Event, player.ID)
+		dispatchEvent(message, player, room, registry)
 	}
 }
 
-func handlePlayerDisconnect(player *game.Player, room *game.Room, registry service.RoomRegistryService) {
-	// During a game, keep the player in the room but mark them as disconnected
-	if room.Session != nil {
+// handlePlayerDisconnect nils player.Conn only if it still points at the
+// connection that is shutting down. This prevents a stale defer from
+// clobbering a newer connection that has already swapped in.
+func handlePlayerDisconnect(player *game.Player, conn *websocket.Conn, room *game.Room, _ service.RoomRegistryService) {
+	player.Mu.Lock()
+	replaced := player.Conn != conn
+	if !replaced {
 		player.Conn = nil
-		broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), player.ID)
-		log.Printf("player %s disconnected from room %s (game in progress)", player.ID, room.ID)
+	}
+	player.Mu.Unlock()
+
+	if replaced {
+		// Newer connection already active; don't broadcast a spurious "left".
+		log.Printf("player %s old connection closed (already replaced)", player.ID)
 		return
 	}
 
-	// In lobby, fully remove the player
-	hostChanged, err := registry.RemovePlayerFromRoom(room.ID, player.ID)
-	if err != nil {
-		log.Printf("failed to remove player %s from room %s: %v", player.ID, room.ID, err)
-		return
-	}
-
-	broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), uuid.Nil)
-
-	if hostChanged {
-		broadcastToRoom(room, game.NewHostChangedMessage(room.HostID), uuid.Nil)
-	}
-
-	log.Printf("player %s left room %s (%d remaining)", player.ID, room.ID, len(room.Players))
+	broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), player.ID)
+	log.Printf("player %s disconnected from room %s", player.ID, room.ID)
 }
 
 // buildRoomState creates the room_state message sent to a player on connect.
-func buildRoomState(room *game.Room) []byte {
+// The password is only included when receiverID is the current host.
+func buildRoomState(room *game.Room, receiverID uuid.UUID) []byte {
 	players := make([]game.RoomStatePlayer, 0, len(room.Players))
 	for _, p := range room.Players {
 		players = append(players, game.RoomStatePlayer{
@@ -170,7 +189,12 @@ func buildRoomState(room *game.Room) []byte {
 		})
 	}
 
-	return game.NewRoomStateMessage(room.ID, room.HostID, players, room.Settings)
+	password := ""
+	if receiverID == room.HostID {
+		password = room.Password
+	}
+
+	return game.NewRoomStateMessage(room.ID, room.HostID, password, players, room.Settings)
 }
 
 // broadcastToRoom sends a message to all players in the room except the excluded player.

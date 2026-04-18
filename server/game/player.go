@@ -1,6 +1,8 @@
 package game
 
 import (
+	"sync"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -12,6 +14,7 @@ type Player struct {
 	Hand      []Card          `json:"hand,omitempty"`
 	IsAlive   bool            `json:"is_alive"`
 	CardCount int             `json:"card_count"`
+	Mu        sync.Mutex      `json:"-"` // Guards Conn/SendCh/Done during connection swap
 	Conn      *websocket.Conn `json:"-"` // WebSocket connection, not serialized
 	SendCh    chan []byte     `json:"-"` // Channel for sending messages to the player, not serialized
 	Done      chan struct{}   `json:"-"` // Channel to signal player disconnection, not serialized
@@ -23,7 +26,5 @@ func NewPlayer(name string) *Player {
 		Name:      name,
 		IsAlive:   true,
 		CardCount: 2,
-		SendCh:    make(chan []byte, 256),
-		Done:      make(chan struct{}),
 	}
 }

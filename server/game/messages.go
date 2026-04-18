@@ -103,16 +103,27 @@ func NewHostChangedMessage(playerID uuid.UUID) []byte {
 	})
 }
 
+func NewChatReceivedMessage(playerID uuid.UUID, name, text string) []byte {
+	return newMessage(MessageTypeChatReceived, map[string]any{
+		"player_id": playerID.String(),
+		"name":      name,
+		"text":      text,
+	})
+}
+
 type RoomStatePlayer struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Connected bool   `json:"connected"`
 }
 
-func NewRoomStateMessage(roomID string, hostID uuid.UUID, players []RoomStatePlayer, settings RoomSettings) []byte {
+// NewRoomStateMessage builds the room_state payload. `password` must only be
+// populated when the recipient is the host; pass "" otherwise.
+func NewRoomStateMessage(roomID string, hostID uuid.UUID, password string, players []RoomStatePlayer, settings RoomSettings) []byte {
 	return newMessage(MessageTypeRoomState, map[string]any{
 		"room_id":  roomID,
 		"host_id":  hostID.String(),
+		"password": password,
 		"players":  players,
 		"settings": settings,
 	})

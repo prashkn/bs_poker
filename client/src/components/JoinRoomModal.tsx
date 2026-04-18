@@ -24,7 +24,7 @@ export default function JoinRoomModal({ roomId, onJoin }: JoinRoomModalProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!password || !playerName) {
-      toast.error("All fields are required.", { position: "top-center" });
+      toast.error("All fields are required.");
       return;
     }
     onJoin(playerName, password);

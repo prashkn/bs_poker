@@ -34,3 +34,37 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 }
+
+@keyframes chat-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message-in {
+  animation: chat-message-in 180ms ease-out;
+}
+
+.scroll-muted {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(0 0% 20%) transparent;
+}
+.scroll-muted::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-muted::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-muted::-webkit-scrollbar-thumb {
+  background: hsl(0 0% 20%);
+  border-radius: 3px;
+}
+.scroll-muted::-webkit-scrollbar-thumb:hover {
+  background: hsl(0 0% 30%);
+}

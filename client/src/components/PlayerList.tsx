@@ -1,4 +1,4 @@
-import { XIcon } from "lucide-react";
+import { Crown, XIcon } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,17 +9,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { usePlayers } from "@/hooks/useRoom";
-
-function avatarUrl(seed: string) {
-  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
-}
+import { avatarUrl } from "@/lib/avatar";
 
 export default function PlayerList() {
   const { players, hostId, playerId, connected, send } = usePlayers();
   const isHost = playerId === hostId;
 
   return (
-    <Card className="w-72">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Players ({players.length})</CardTitle>
       </CardHeader>
@@ -38,7 +35,9 @@ export default function PlayerList() {
                   <AvatarFallback>{p.name[0]?.toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <span className={p.connected ? "" : "opacity-50"}>{p.name}</span>
-                {p.id === hostId && <span title="Host">👑</span>}
+                {p.id === hostId && (
+                  <Crown className="h-3.5 w-3.5 text-yellow-400" aria-label="Host" />
+                )}
                 {p.id === playerId && (
                   <span className="text-xs text-muted-foreground">(you)</span>
                 )}

@@ -4,6 +4,7 @@ function Toaster({ ...props }: React.ComponentProps<typeof Sonner>) {
   return (
     <Sonner
       className="toaster group"
+      position="top-center"
       style={
         {
           "--normal-bg": "hsl(0 0% 14.9%)",

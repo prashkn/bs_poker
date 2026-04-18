@@ -58,9 +58,8 @@ type GetRoomResponse = {}
 export const getRoom = async (
     request: GetRoomRequest
 ): Promise<GetRoomResponse> => {
-    const res = await axios.get(`/api/rooms/${request.room_id}`, {
-        params: { player_id: request.player_id },
-    });
+    const params = request.player_id ? { player_id: request.player_id } : undefined;
+    const res = await axios.get(`/api/rooms/${request.room_id}`, { params });
     return res.data;
 }
 
