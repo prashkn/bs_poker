@@ -70,13 +70,67 @@ func newMessage(event MessageEvent, payload any) []byte {
 
 // Server -> Client message constructors
 
-func NewGameStartedMessage(hand []Card, currentTurn uuid.UUID, round int, turnOrder []uuid.UUID, cardCounts map[uuid.UUID]int) []byte {
+func NewGameStartedMessage(hand []Card, currentTurn uuid.UUID, round int, turnOrder []uuid.UUID, cardCounts map[uuid.UUID]int, turnDeadlineMs int64) []byte {
 	return newMessage(MessageTypeGameStarted, map[string]any{
-		"hand":         hand,
-		"current_turn": currentTurn.String(),
-		"round":        round,
-		"turn_order":   turnOrder,
-		"card_counts":  cardCounts,
+		"hand":             hand,
+		"current_turn":     currentTurn.String(),
+		"round":            round,
+		"turn_order":       turnOrder,
+		"card_counts":      cardCounts,
+		"turn_deadline_ms": turnDeadlineMs,
+	})
+}
+
+// NewTurnMessage announces the current turn and its server-side deadline
+// (unix milliseconds). Clients should render countdown by interpolating
+// max(0, deadline - now) rather than running their own timer.
+func NewTurnMessage(playerID uuid.UUID, turnDeadlineMs int64) []byte {
+	return newMessage(MessageTypeTurn, map[string]any{
+		"player_id":        playerID.String(),
+		"turn_deadline_ms": turnDeadlineMs,
+	})
+}
+
+func NewClaimMadeMessage(playerID uuid.UUID, madeHand MadeHand) []byte {
+	return newMessage(MessageTypeClaimMade, map[string]any{
+		"player_id": playerID.String(),
+		"made_hand": madeHand,
+	})
+}
+
+func NewBSCalledMessage(callerID, targetID uuid.UUID) []byte {
+	return newMessage(MessageTypeBSCalled, map[string]any{
+		"caller_id": callerID.String(),
+		"target_id": targetID.String(),
+	})
+}
+
+func NewBSResultMessage(callerID, targetID, loserID uuid.UUID, claimValid bool, allHands map[uuid.UUID][]Card) []byte {
+	return newMessage(MessageTypeBSResult, map[string]any{
+		"caller_id":   callerID.String(),
+		"target_id":   targetID.String(),
+		"loser_id":    loserID.String(),
+		"claim_valid": claimValid,
+		"all_hands":   allHands,
+	})
+}
+
+func NewPlayerEliminatedMessage(playerID uuid.UUID) []byte {
+	return newMessage(MessageTypePlayerEliminated, map[string]any{
+		"player_id": playerID.String(),
+	})
+}
+
+func NewGameOverMessage(winnerID uuid.UUID) []byte {
+	return newMessage(MessageTypeGameOver, map[string]any{
+		"winner_id": winnerID.String(),
+	})
+}
+
+func NewRoundStartedMessage(round int, hand []Card) []byte {
+	return newMessage(MessageTypeRoundStarted, map[string]any{
+		"round": round,
+		"hand":  hand,
 	})
 }
 

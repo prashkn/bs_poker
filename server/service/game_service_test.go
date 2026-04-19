@@ -74,6 +74,56 @@ func TestVerifyClaim_Invalid(t *testing.T) {
 	}
 }
 
+func TestVerifyClaim_RankOnlyIgnoresSuit(t *testing.T) {
+	// Pool has two aces but in different suits than the claim specifies.
+	// For a pair (rank-only hand), the claim should still verify.
+	allCards := []game.Card{
+		{Suit: game.Diamonds, Value: game.Ace},
+		{Suit: game.Clubs, Value: game.Ace},
+		{Suit: game.Hearts, Value: game.Two},
+	}
+	claim := game.MadeHand{
+		HandType: game.Pair,
+		Cards: []game.Card{
+			{Suit: game.Hearts, Value: game.Ace},
+			{Suit: game.Spades, Value: game.Ace},
+		},
+	}
+	if !VerifyClaim(claim, allCards) {
+		t.Error("pair should verify regardless of suit")
+	}
+}
+
+func TestVerifyClaim_FlushRequiresSuit(t *testing.T) {
+	// Pool has a full hearts flush.
+	heartsPool := []game.Card{
+		{Suit: game.Hearts, Value: game.Two},
+		{Suit: game.Hearts, Value: game.Three},
+		{Suit: game.Hearts, Value: game.Four},
+		{Suit: game.Hearts, Value: game.Five},
+		{Suit: game.Hearts, Value: game.Six},
+	}
+	heartsClaim := game.MadeHand{
+		HandType: game.Flush,
+		Cards:    heartsPool,
+	}
+	if !VerifyClaim(heartsClaim, heartsPool) {
+		t.Error("hearts flush should verify against a hearts pool")
+	}
+
+	// Same ranks but the pool is entirely spades — claim requires hearts.
+	spadesPool := []game.Card{
+		{Suit: game.Spades, Value: game.Two},
+		{Suit: game.Spades, Value: game.Three},
+		{Suit: game.Spades, Value: game.Four},
+		{Suit: game.Spades, Value: game.Five},
+		{Suit: game.Spades, Value: game.Six},
+	}
+	if VerifyClaim(heartsClaim, spadesPool) {
+		t.Error("hearts flush should not verify against a spades-only pool")
+	}
+}
+
 func TestVerifyClaim_DuplicateCards(t *testing.T) {
 	// Pool has only one Ace of Hearts, claim tries to use it twice
 	allCards := []game.Card{

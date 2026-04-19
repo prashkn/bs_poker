@@ -104,7 +104,7 @@ func MakeClaim(room *game.Room, playerID uuid.UUID, claim game.MadeHand) error {
 
 	// Advance to next alive player
 	g.CurrentTurn = nextAliveTurnIndex(room)
-	g.SM.MoveTo(game.TransitionClaim) // NewRound->Claim or Claim->Claim
+	g.SM.MoveTo(game.TransitionClaim)
 
 	return nil
 }
@@ -186,20 +186,27 @@ func CallBS(room *game.Room, playerID uuid.UUID) (*BSResult, error) {
 	return result, nil
 }
 
-// VerifyClaim checks that every card in the claimed hand exists in the pool of all cards.
+// VerifyClaim checks that every card in the claimed hand exists in the pool of
+// all cards. For rank-only hand types (pair, straight, full house, etc.) suits
+// are ignored — a claimed Ace matches any Ace in the pool. Flush-family hands
+// match on both rank and suit.
 func VerifyClaim(claim game.MadeHand, allCards []game.Card) bool {
+	matchSuit := claim.HandType.RequiresSuit()
 	pool := make([]game.Card, len(allCards))
 	copy(pool, allCards)
 
 	for _, claimCard := range claim.Cards {
 		found := false
 		for i, poolCard := range pool {
-			if poolCard.Suit == claimCard.Suit && poolCard.Value == claimCard.Value {
-				// Remove matched card from pool
-				pool = append(pool[:i], pool[i+1:]...)
-				found = true
-				break
+			if poolCard.Value != claimCard.Value {
+				continue
 			}
+			if matchSuit && poolCard.Suit != claimCard.Suit {
+				continue
+			}
+			pool = append(pool[:i], pool[i+1:]...)
+			found = true
+			break
 		}
 		if !found {
 			return false

@@ -86,15 +86,40 @@ export function useChat() {
 }
 
 export function useGame() {
-  const { game } = useRoomContext();
+  const { game, playerId } = useRoomContext();
+
+  // Next alive player in turn order after the current one. Used to show the
+  // "must beat it" indicator in TableCenter.
+  const nextTurnPlayerId = useMemo(() => {
+    const order = game.turnOrder;
+    if (order.length === 0) return "";
+    const start = order.indexOf(game.currentTurnPlayerId);
+    if (start === -1) return order[0] ?? "";
+    for (let i = 1; i <= order.length; i++) {
+      const candidate = order[(start + i) % order.length];
+      const p = game.players.get(candidate);
+      if (p?.isAlive) return candidate;
+    }
+    return "";
+  }, [game.turnOrder, game.currentTurnPlayerId, game.players]);
+
   return {
     phase: game.phase,
     currentTurnPlayerId: game.currentTurnPlayerId,
     players: game.players,
+    alivePlayers: game.alivePlayers,
+    turnOrder: game.turnOrder,
+    nextTurnPlayerId,
+    myPlayerId: playerId,
     isMyTurn: game.isMyTurn,
     canCallBS: game.canCallBS,
     myHand: game.myHand,
     round: game.round,
+    currentClaim: game.currentClaim,
+    previousClaims: game.previousClaims,
+    lastBSResult: game.lastBSResult,
+    settings: game.settings,
     winnerId: game.winnerId,
+    turnDeadlineMs: game.turnDeadlineMs,
   };
 }

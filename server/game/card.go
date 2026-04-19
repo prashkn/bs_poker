@@ -203,6 +203,17 @@ func isRoyalFlushValid(cards []Card) bool {
 	return false
 }
 
+// RequiresSuit reports whether this hand type's identity depends on suit.
+// Flush-family hands do; all other hands are rank-only and the suits carried
+// on a claim's cards are filler.
+func (h PokerHand) RequiresSuit() bool {
+	switch h {
+	case Flush, StraightFlush, RoyalFlush:
+		return true
+	}
+	return false
+}
+
 func (h *MadeHand) IsValid() bool {
 	switch h.HandType {
 	case HighCard:

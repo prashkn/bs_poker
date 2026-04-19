@@ -51,9 +51,11 @@ export default function Room() {
   return (
     <>
       {needsJoin && <JoinRoomModal roomId={roomId ?? ""} onJoin={handleJoin} />}
-      <div className={`flex min-h-screen flex-col items-center justify-center p-6 ${needsJoin ? "blur-sm pointer-events-none select-none" : ""}`}>
+      <div className={`min-h-screen w-full ${needsJoin ? "blur-sm pointer-events-none select-none" : ""}`}>
         {isLoading ? (
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="flex min-h-screen items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
         ) : ready ? (
           <RoomProvider roomId={roomId!} playerId={playerId}>
             <RoomRouter />

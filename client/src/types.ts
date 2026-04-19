@@ -41,6 +41,7 @@ export interface BSResult {
 // Room settings (matches server RoomSettings)
 
 export interface RoomSettings {
+  // Nanoseconds — Go's time.Duration serializes as int64 ns.
   time_per_turn: number;
   max_cards_before_elimination: number;
 }
@@ -72,8 +73,9 @@ export type ServerEventMap = {
     turn_order: string[];
     current_turn: string;
     card_counts: Record<string, number>;
+    turn_deadline_ms: number;
   };
-  turn: { player_id: string };
+  turn: { player_id: string; turn_deadline_ms: number };
   claim_made: { player_id: string; made_hand: MadeHand };
   bs_called: Record<string, never>;
   bs_result: BSResult;
@@ -109,6 +111,9 @@ export interface GameState {
   myHand: Card[];
   turnOrder: string[];
   currentTurnPlayerId: string;
+  // Unix ms deadline for the current turn. Server-authoritative; client
+  // interpolates max(0, deadline - now) for the countdown display.
+  turnDeadlineMs: number | null;
   currentClaim: Claim | null;
   previousClaims: Claim[];
 

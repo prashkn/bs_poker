@@ -17,6 +17,7 @@ const initialState: GameState = {
   myHand: [],
   turnOrder: [],
   currentTurnPlayerId: "",
+  turnDeadlineMs: null,
   currentClaim: null,
   previousClaims: [],
   lastBSResult: null,
@@ -133,6 +134,7 @@ function gameReducer(state: GameState, action: Action): GameState {
         myHand: action.payload.hand,
         turnOrder: action.payload.turn_order,
         currentTurnPlayerId: action.payload.current_turn,
+        turnDeadlineMs: action.payload.turn_deadline_ms,
         currentClaim: null,
         previousClaims: [],
         lastBSResult: null,
@@ -141,7 +143,11 @@ function gameReducer(state: GameState, action: Action): GameState {
     }
 
     case "turn":
-      return { ...state, currentTurnPlayerId: action.payload.player_id };
+      return {
+        ...state,
+        currentTurnPlayerId: action.payload.player_id,
+        turnDeadlineMs: action.payload.turn_deadline_ms,
+      };
 
     case "claim_made": {
       const claim: Claim = {
@@ -177,6 +183,7 @@ function gameReducer(state: GameState, action: Action): GameState {
         round: action.payload.round,
         myHand: action.payload.hand,
         currentTurnPlayerId: "",
+        turnDeadlineMs: null,
         currentClaim: null,
         previousClaims: [],
         lastBSResult: null,

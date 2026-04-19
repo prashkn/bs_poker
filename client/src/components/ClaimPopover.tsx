@@ -65,6 +65,8 @@ const SUIT_COLORS: Record<string, string> = {
 interface ClaimPopoverProps {
   onClaim: (madeHand: MadeHand) => void;
   disabled: boolean;
+  triggerClassName?: string;
+  triggerLabel?: string;
 }
 
 function needsValue1(handType: number): boolean {
@@ -117,7 +119,12 @@ function buildCards(handType: number, value1: number, value2: number, suit: stri
   }
 }
 
-export default function ClaimPopover({ onClaim, disabled }: ClaimPopoverProps) {
+export default function ClaimPopover({
+  onClaim,
+  disabled,
+  triggerClassName,
+  triggerLabel = "Claim",
+}: ClaimPopoverProps) {
   const [open, setOpen] = useState(false);
   const [handType, setHandType] = useState<number | null>(null);
   const [value1, setValue1] = useState<number | null>(null);
@@ -163,8 +170,8 @@ export default function ClaimPopover({ onClaim, disabled }: ClaimPopoverProps) {
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <PopoverTrigger asChild>
-        <Button className="flex-1" disabled={disabled}>
-          Claim
+        <Button className={triggerClassName ?? "flex-1"} disabled={disabled}>
+          {triggerLabel}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80">
