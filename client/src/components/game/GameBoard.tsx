@@ -179,6 +179,7 @@ export default function GameBoard() {
                 <TableCenter
                   claim={currentClaim}
                   players={players}
+                  currentTurnPlayerId={currentTurnPlayerId}
                   nextPlayerId={nextTurnPlayerId}
                 />
               )}
