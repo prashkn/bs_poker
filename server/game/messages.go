@@ -19,10 +19,11 @@ const (
 	MessageTypeKickPlayer     MessageEvent = "kick_player"
 	MessageTypeUpdateSettings MessageEvent = "update_settings"
 
-	// Server -> Client
+	// Server -> Client (broadcast to room)
 	MessageTypeRoomState        MessageEvent = "room_state"
 	MessageTypePlayerJoined     MessageEvent = "player_joined"
 	MessageTypePlayerLeft       MessageEvent = "player_left"
+	MessageTypePlayerKicked     MessageEvent = "player_kicked"
 	MesssageTypeHostChanged     MessageEvent = "host_changed"
 	MessageTypeGameStarted      MessageEvent = "game_started"
 	MessageTypeTurn             MessageEvent = "turn"
@@ -34,7 +35,10 @@ const (
 	MessageTypeGameOver         MessageEvent = "game_over"
 	MessageTypeChatReceived     MessageEvent = "chat_received"
 	MessageTypeSettingsUpdated  MessageEvent = "settings_updated"
-	MessageTypeErrorMessage     MessageEvent = "error_message"
+
+	// Server -> Client (sent only to the targeted player)
+	MessageTypeKicked       MessageEvent = "kicked"        // sent to the player being kicked, right before their socket closes
+	MessageTypeErrorMessage MessageEvent = "error_message" // sent to the player whose action triggered the error
 )
 
 // RawMessage is the routing envelope — extract the event, keep raw payload bytes for per-handler decoding.
@@ -145,6 +149,19 @@ func NewPlayerLeftMessage(playerID uuid.UUID) []byte {
 	return newMessage(MessageTypePlayerLeft, map[string]any{
 		"player_id": playerID.String(),
 	})
+}
+
+// NewPlayerKickedMessage is broadcast to the room when a player is kicked.
+func NewPlayerKickedMessage(playerID uuid.UUID) []byte {
+	return newMessage(MessageTypePlayerKicked, map[string]any{
+		"player_id": playerID.String(),
+	})
+}
+
+// NewKickedMessage is sent only to the player being kicked, right before
+// their socket is closed, so the client can clear local state and route home.
+func NewKickedMessage() []byte {
+	return newMessage(MessageTypeKicked, map[string]any{})
 }
 
 func NewHostChangedMessage(playerID uuid.UUID) []byte {

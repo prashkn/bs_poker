@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { MadeHand, Card } from "@/types";
+import type { Claim, MadeHand, Card } from "@/types";
 
 // Hand type constants matching the server
 const HighCard = 1;
@@ -65,8 +65,49 @@ const SUIT_COLORS: Record<string, string> = {
 interface ClaimPopoverProps {
   onClaim: (madeHand: MadeHand) => void;
   disabled: boolean;
+  currentClaim: Claim | null;
   triggerClassName?: string;
   triggerLabel?: string;
+}
+
+// Mirrors the server's Card.IsStrongerThan in server/game/card.go. Strength
+// rules: different hand types compare by hand_type alone; same hand types
+// compare by max card value, with TwoPair using a (max, min) tiebreak.
+// RoyalFlush vs RoyalFlush is never stronger (suits don't tiebreak).
+function isStrongerThan(a: MadeHand, b: MadeHand): boolean {
+  if (a.hand_type !== b.hand_type) return a.hand_type > b.hand_type;
+  if (a.hand_type === RoyalFlush) return false;
+  if (a.hand_type === TwoPair) {
+    const aHigh = Math.max(...a.cards.map((c) => c.value));
+    const aLow = Math.min(...a.cards.map((c) => c.value));
+    const bHigh = Math.max(...b.cards.map((c) => c.value));
+    const bLow = Math.min(...b.cards.map((c) => c.value));
+    if (aHigh !== bHigh) return aHigh > bHigh;
+    return aLow > bLow;
+  }
+  const aHigh = Math.max(...a.cards.map((c) => c.value));
+  const bHigh = Math.max(...b.cards.map((c) => c.value));
+  return aHigh > bHigh;
+}
+
+// Tests "best case" for a partial selection: fills unset slots with the
+// strongest legal value, builds the candidate hand, and asks whether it
+// beats the current claim. Used to gray out options that have no path to a
+// winning claim.
+function tryBeatsCurrent(
+  handType: number,
+  v1: number | null,
+  v2: number | null,
+  current: Claim | null,
+): boolean {
+  if (!current) return true;
+  const filledV1 = v1 ?? 14;
+  // For TwoPair / FullHouse, v2 must differ from v1; otherwise pick Ace.
+  const filledV2 =
+    v2 ?? ((handType === TwoPair || handType === FullHouse) && filledV1 === 14 ? 13 : 14);
+  const cards = buildCards(handType, filledV1, filledV2, "hearts");
+  if (cards.length === 0) return false;
+  return isStrongerThan({ hand_type: handType, cards }, current.made_hand);
 }
 
 function needsValue1(handType: number): boolean {
@@ -122,6 +163,7 @@ function buildCards(handType: number, value1: number, value2: number, suit: stri
 export default function ClaimPopover({
   onClaim,
   disabled,
+  currentClaim,
   triggerClassName,
   triggerLabel = "Claim",
 }: ClaimPopoverProps) {
@@ -155,6 +197,13 @@ export default function ClaimPopover({
     return true;
   }
 
+  // Strength-gating: a fully-specified claim must beat currentClaim.
+  function isStrongerThanCurrent(): boolean {
+    if (handType === null) return false;
+    if (!isComplete()) return false;
+    return tryBeatsCurrent(handType, value1, value2, currentClaim);
+  }
+
   function handleSubmit() {
     if (!isComplete() || handType === null) return;
     const cards = buildCards(handType, value1 ?? 0, value2 ?? 0, suit ?? "");
@@ -183,11 +232,18 @@ export default function ClaimPopover({
               <SelectValue placeholder="Select hand type" />
             </SelectTrigger>
             <SelectContent>
-              {HAND_TYPES.map((h) => (
-                <SelectItem key={h.value} value={h.value.toString()}>
-                  {h.label}
-                </SelectItem>
-              ))}
+              {HAND_TYPES.map((h) => {
+                const enabled = tryBeatsCurrent(h.value, null, null, currentClaim);
+                return (
+                  <SelectItem
+                    key={h.value}
+                    value={h.value.toString()}
+                    disabled={!enabled}
+                  >
+                    {h.label}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
 
@@ -216,45 +272,53 @@ export default function ClaimPopover({
                 {handType === TwoPair ? "High Pair" : handType === FullHouse ? "Three of a Kind" : handType === Straight || handType === StraightFlush ? "High Card" : "Value"}
               </p>
               <div className="flex flex-wrap gap-1">
-                {availableValues.map((v) => (
-                  <Button
-                    key={v}
-                    variant={value1 === v ? "default" : "outline"}
-                    size="sm"
-                    className="w-8 h-8 text-xs"
-                    onClick={() => setValue1(v)}
-                  >
-                    {VALUE_LABELS[v]}
-                  </Button>
-                ))}
+                {availableValues.map((v) => {
+                  const enabled = tryBeatsCurrent(handType, v, null, currentClaim);
+                  return (
+                    <Button
+                      key={v}
+                      variant={value1 === v ? "default" : "outline"}
+                      size="sm"
+                      className="w-8 h-8 text-xs"
+                      onClick={() => setValue1(v)}
+                      disabled={!enabled}
+                    >
+                      {VALUE_LABELS[v]}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {handType !== null && needsValue2(handType) && (
+          {handType !== null && needsValue2(handType) && value1 !== null && (
             <div>
               <p className="text-xs text-muted-foreground mb-1">
                 {handType === TwoPair ? "Low Pair" : "Pair"}
               </p>
               <div className="flex flex-wrap gap-1">
-                {VALUES.filter(v => v !== value1).map((v) => (
-                  <Button
-                    key={v}
-                    variant={value2 === v ? "default" : "outline"}
-                    size="sm"
-                    className="w-8 h-8 text-xs"
-                    onClick={() => setValue2(v)}
-                  >
-                    {VALUE_LABELS[v]}
-                  </Button>
-                ))}
+                {VALUES.filter(v => v !== value1).map((v) => {
+                  const enabled = tryBeatsCurrent(handType, value1, v, currentClaim);
+                  return (
+                    <Button
+                      key={v}
+                      variant={value2 === v ? "default" : "outline"}
+                      size="sm"
+                      className="w-8 h-8 text-xs"
+                      onClick={() => setValue2(v)}
+                      disabled={!enabled}
+                    >
+                      {VALUE_LABELS[v]}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           )}
 
           <Button
             className="w-full"
-            disabled={!isComplete()}
+            disabled={!isComplete() || !isStrongerThanCurrent()}
             onClick={handleSubmit}
           >
             Submit Claim

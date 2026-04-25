@@ -64,9 +64,10 @@ func (r *roomRegistryService) CreateRoom(password string) *game.Room {
 	}
 
 	r.rooms[id] = &game.Room{
-		ID:       id,
-		Password: password,
-		Players:  make(map[uuid.UUID]*game.Player),
+		ID:        id,
+		Password:  password,
+		Players:   make(map[uuid.UUID]*game.Player),
+		KickedIDs: make(map[uuid.UUID]struct{}),
 		Settings: game.RoomSettings{
 			TimePerTurn:               30 * time.Second,
 			MaxCardsBeforeElimination: 6,

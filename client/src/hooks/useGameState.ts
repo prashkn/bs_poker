@@ -31,6 +31,7 @@ const HANDLED_EVENTS = [
   "room_state",
   "player_joined",
   "player_left",
+  "player_kicked",
   "player_disconnected",
   "player_reconnected",
   "host_changed",
@@ -86,7 +87,8 @@ function gameReducer(state: GameState, action: Action): GameState {
       return { ...state, players };
     }
 
-    case "player_left": {
+    case "player_left":
+    case "player_kicked": {
       const players = new Map(state.players);
       players.delete(action.payload.player_id);
       return { ...state, players };
@@ -178,6 +180,10 @@ function gameReducer(state: GameState, action: Action): GameState {
     }
 
     case "round_started":
+      // Don't clear lastBSResult here — the server fires round_started right
+      // after bs_result on non-elimination resolutions, which would close the
+      // banner before the user ever sees it. The banner is dismissed locally
+      // via the "Next round" button (see dismissedBsKey in GameBoard).
       return {
         ...state,
         round: action.payload.round,
@@ -186,7 +192,6 @@ function gameReducer(state: GameState, action: Action): GameState {
         turnDeadlineMs: null,
         currentClaim: null,
         previousClaims: [],
-        lastBSResult: null,
       };
 
     case "player_eliminated": {

@@ -37,7 +37,6 @@ export default function GameBoard() {
     alivePlayers,
     myPlayerId,
     currentTurnPlayerId,
-    nextTurnPlayerId,
     currentClaim,
     previousClaims,
     lastBSResult,
@@ -180,7 +179,6 @@ export default function GameBoard() {
                   claim={currentClaim}
                   players={players}
                   currentTurnPlayerId={currentTurnPlayerId}
-                  nextPlayerId={nextTurnPlayerId}
                 />
               )}
             </div>

@@ -19,12 +19,18 @@ export default function Room() {
   const { isLoading, isError, error } = useGetRoom({ room_id: roomId ?? "", player_id: playerId });
   const joinRoom = useJoinRoom();
 
-    // If room doesn't exist, or stored player id is not part of the room, show
-  // error and navigate home. Clear the stale id so we don't loop on the next visit.
+    // If room doesn't exist, the player was kicked, or the stored id isn't in
+  // the room, show an error and navigate home. Clear the stale id so we don't
+  // loop on the next visit.
   useEffect(() => {
     if (!isError) return;
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-    const message = status === 404 ? "Room not found." : "Unable to join room.";
+    const message =
+      status === 403
+        ? "You were kicked from this room."
+        : status === 404
+          ? "Room not found."
+          : "Unable to join room.";
     if (roomId) sessionStorage.removeItem(playerIdKey(roomId));
     toast.error(message);
     navigate("/", { replace: true });

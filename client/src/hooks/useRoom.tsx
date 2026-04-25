@@ -6,12 +6,15 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   useWebSocket,
   type SendFn,
   type ServerEmitter,
 } from "./useWebSocket";
 import { useGameState } from "./useGameState";
+import { playerIdKey } from "@/lib/storage";
 
 type GameSlice = ReturnType<typeof useGameState>;
 
@@ -36,6 +39,7 @@ interface RoomProviderProps {
 export function RoomProvider({ roomId, playerId, children }: RoomProviderProps) {
   const { emitter, connected, send } = useWebSocket(roomId, playerId);
   const game = useGameState(emitter, playerId);
+  const navigate = useNavigate();
 
   // Hosts receive a non-empty password in room_state; non-hosts get "". Keep
   // the latest non-empty value so host migration doesn't wipe the password
@@ -46,6 +50,16 @@ export function RoomProvider({ roomId, playerId, children }: RoomProviderProps) 
       if (payload.password) setPassword(payload.password);
     });
   }, [emitter]);
+
+  // The host kicked us — clear local state and route home before the server
+  // closes our socket.
+  useEffect(() => {
+    return emitter.on("kicked", () => {
+      sessionStorage.removeItem(playerIdKey(roomId));
+      toast.error("You were kicked from this room.");
+      navigate("/", { replace: true });
+    });
+  }, [emitter, roomId, navigate]);
 
   const value = useMemo<RoomContextValue>(
     () => ({ roomId, playerId, password, connected, emitter, send, game }),
@@ -88,28 +102,12 @@ export function useChat() {
 export function useGame() {
   const { game, playerId } = useRoomContext();
 
-  // Next alive player in turn order after the current one. Used to show the
-  // "must beat it" indicator in TableCenter.
-  const nextTurnPlayerId = useMemo(() => {
-    const order = game.turnOrder;
-    if (order.length === 0) return "";
-    const start = order.indexOf(game.currentTurnPlayerId);
-    if (start === -1) return order[0] ?? "";
-    for (let i = 1; i <= order.length; i++) {
-      const candidate = order[(start + i) % order.length];
-      const p = game.players.get(candidate);
-      if (p?.isAlive) return candidate;
-    }
-    return "";
-  }, [game.turnOrder, game.currentTurnPlayerId, game.players]);
-
   return {
     phase: game.phase,
     currentTurnPlayerId: game.currentTurnPlayerId,
     players: game.players,
     alivePlayers: game.alivePlayers,
     turnOrder: game.turnOrder,
-    nextTurnPlayerId,
     myPlayerId: playerId,
     isMyTurn: game.isMyTurn,
     canCallBS: game.canCallBS,

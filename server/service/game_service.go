@@ -186,6 +186,67 @@ func CallBS(room *game.Room, playerID uuid.UUID) (*BSResult, error) {
 	return result, nil
 }
 
+// ForfeitResult describes what happened when a player was removed from the
+// active session — used by callers (kick, disconnect) to decide which
+// follow-up events to broadcast.
+type ForfeitResult struct {
+	Forfeited    bool      // true if the player was in the session and got removed
+	GameOver     bool      // true if removing them ended the game
+	WinnerID     uuid.UUID // set when GameOver is true and a winner remains
+	TurnAdvanced bool      // true if the forfeit player's turn was the active one and the index now points elsewhere
+}
+
+// ForfeitPlayer removes a player from the active session: drops them from
+// TurnOrder and adjusts CurrentTurn. Does not touch room.Players — callers
+// must follow up with RemovePlayerFromRoom. Caller must hold room.Mu.
+//
+// If <=1 players remain in TurnOrder afterward, the state machine is forced
+// to StateGameOver directly (forfeit can fire from any state, so the normal
+// RoundEnd→GameOver edge doesn't apply).
+func ForfeitPlayer(room *game.Room, playerID uuid.UUID) ForfeitResult {
+	g := room.Session
+	if g == nil {
+		return ForfeitResult{}
+	}
+
+	forfeitIdx := -1
+	for i, id := range g.TurnOrder {
+		if id == playerID {
+			forfeitIdx = i
+			break
+		}
+	}
+	if forfeitIdx == -1 {
+		return ForfeitResult{}
+	}
+
+	wasCurrent := forfeitIdx == g.CurrentTurn
+	g.TurnOrder = append(g.TurnOrder[:forfeitIdx], g.TurnOrder[forfeitIdx+1:]...)
+
+	if len(g.TurnOrder) <= 1 {
+		g.SM.Current = game.StateGameOver
+		var winner uuid.UUID
+		if len(g.TurnOrder) == 1 {
+			winner = g.TurnOrder[0]
+		}
+		return ForfeitResult{Forfeited: true, GameOver: true, WinnerID: winner}
+	}
+
+	if wasCurrent {
+		// Removing at CurrentTurn shifts the next player into this index.
+		// Wrap if we removed the last slot.
+		if g.CurrentTurn >= len(g.TurnOrder) {
+			g.CurrentTurn = 0
+		}
+		return ForfeitResult{Forfeited: true, TurnAdvanced: true}
+	}
+	if forfeitIdx < g.CurrentTurn {
+		g.CurrentTurn--
+	}
+
+	return ForfeitResult{Forfeited: true}
+}
+
 // VerifyClaim checks that every card in the claimed hand exists in the pool of
 // all cards. For rank-only hand types (pair, straight, full house, etc.) suits
 // are ignored — a claimed Ace matches any Ace in the pool. Flush-family hands

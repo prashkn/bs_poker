@@ -19,26 +19,24 @@ interface TableCenterProps {
   claim: Claim | null;
   players: Map<string, PlayerState>;
   currentTurnPlayerId: string;
-  nextPlayerId: string;
 }
 
 export default function TableCenter({
   claim,
   players,
   currentTurnPlayerId,
-  nextPlayerId,
 }: TableCenterProps) {
   const claimer = claim ? players.get(claim.player_id) ?? null : null;
-  const nextPlayer = nextPlayerId ? players.get(nextPlayerId) ?? null : null;
+  const nextPlayer = currentTurnPlayerId
+    ? players.get(currentTurnPlayerId) ?? null
+    : null;
   const handType = claim?.made_hand.hand_type ?? 0;
   const handName = HAND_NAMES[handType] ?? "—";
 
   // First turn of a round — no claim yet; show an opener placeholder instead
   // of the claimer → next-player layout.
   if (!claim) {
-    const opener = currentTurnPlayerId
-      ? players.get(currentTurnPlayerId) ?? null
-      : null;
+    const opener = nextPlayer;
     return (
       <div className="relative flex h-full flex-col">
         <div className="relative flex flex-1 items-center justify-center px-8 pt-6 pb-4">

@@ -10,6 +10,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: true, // listen on 0.0.0.0 so phones/other devices on the LAN can connect
     proxy: {
       "/api": "http://localhost:8080",
       "/ws": {

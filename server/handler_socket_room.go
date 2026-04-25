@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -56,6 +57,17 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 			return
 		}
 
+		// Reject kicked player_ids with a clear 403 so the client can show
+		// "you were kicked" instead of a generic not-found.
+		room.Mu.Lock()
+		_, kicked := room.KickedIDs[playerID]
+		room.Mu.Unlock()
+		if kicked {
+			log.Printf("[ws] reject room=%s player=%s: kicked", roomID, playerIDStr)
+			http.Error(w, "you have been kicked from this room", http.StatusForbidden)
+			return
+		}
+
 		player, err := registry.GetPlayerInRoom(roomID, playerID)
 		if playerIDStr != "" && err != nil {
 			log.Printf("[ws] reject room=%s player=%s: player not found", roomID, playerIDStr)
@@ -70,17 +82,19 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 		}
 		log.Printf("[ws] accepting room=%s player=%s", roomID, playerIDStr)
 
-		// Snapshot any prior connection, then close it to nudge the old readPump to exit.
-		// We don't touch player.Done here — each pump owns the Done it was started with,
-		// so the old pump will close its own Done in its defer.
+		// Snapshot the previous connection and cancel any pending disconnect
+		// cleanup — we're re-establishing the seat. AfterFunc.Stop() can
+		// return false if the timer already fired; finalizeDisconnect
+		// re-checks player.Conn and bails when a newer one is installed.
 		player.Mu.Lock()
 		oldConn := player.Conn
-		player.Mu.Unlock()
-		if oldConn != nil {
-			oldConn.Close()
+		if player.DisconnectTimer != nil {
+			player.DisconnectTimer.Stop()
+			player.DisconnectTimer = nil
 		}
+		player.Mu.Unlock()
 
-		// Upgrade to WebSocket
+		// Upgrade to WebSocket BEFORE closing oldConn so we can swap atomically.
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("[ws] upgrade failed room=%s player=%s: %v", roomID, playerIDStr, err)
@@ -97,6 +111,13 @@ func handleWebSocket(registry service.RoomRegistryService) http.HandlerFunc {
 		player.SendCh = sendCh
 		player.Done = done
 		player.Mu.Unlock()
+
+		// Now that the new conn is installed, close the old one. Its readPump
+		// will exit and `handlePlayerDisconnect` will see player.Conn != oldConn
+		// and bail — no spurious forfeit/leave broadcast.
+		if oldConn != nil {
+			oldConn.Close()
+		}
 
 		// Send room_state to the connecting player
 		sendToPlayer(player, buildRoomState(room, player.ID))
@@ -156,10 +177,16 @@ func readPump(player *game.Player, conn *websocket.Conn, done chan struct{}, roo
 	}
 }
 
-// handlePlayerDisconnect nils player.Conn only if it still points at the
-// connection that is shutting down. This prevents a stale defer from
-// clobbering a newer connection that has already swapped in.
-func handlePlayerDisconnect(player *game.Player, conn *websocket.Conn, room *game.Room, _ service.RoomRegistryService) {
+// disconnectGrace is how long we wait after a WebSocket close before
+// forfeiting and removing the player. Absorbs React StrictMode dev
+// double-mounts, page refreshes, and brief network blips.
+const disconnectGrace = 10 * time.Second
+
+// handlePlayerDisconnect schedules cleanup after a closed WebSocket. If the
+// player reconnects within disconnectGrace the cleanup is cancelled. If they
+// don't, finalizeDisconnect forfeits the session seat, removes them from the
+// room, and broadcasts the follow-up events.
+func handlePlayerDisconnect(player *game.Player, conn *websocket.Conn, room *game.Room, registry service.RoomRegistryService) {
 	player.Mu.Lock()
 	replaced := player.Conn != conn
 	if !replaced {
@@ -173,8 +200,69 @@ func handlePlayerDisconnect(player *game.Player, conn *websocket.Conn, room *gam
 		return
 	}
 
-	broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), player.ID)
-	log.Printf("player %s disconnected from room %s", player.ID, room.ID)
+	// Skip if already removed by the kick path.
+	if _, err := registry.GetPlayerInRoom(room.ID, player.ID); err != nil {
+		log.Printf("player %s already removed from room %s; skipping disconnect cleanup", player.ID, room.ID)
+		return
+	}
+
+	player.Mu.Lock()
+	if player.DisconnectTimer != nil {
+		player.DisconnectTimer.Stop()
+	}
+	player.DisconnectTimer = time.AfterFunc(disconnectGrace, func() {
+		finalizeDisconnect(player, room, registry)
+	})
+	player.Mu.Unlock()
+
+	log.Printf("player %s disconnected from room %s; cleanup scheduled in %s", player.ID, room.ID, disconnectGrace)
+}
+
+// finalizeDisconnect runs after the grace period. It bails if the player has
+// reconnected (player.Conn != nil) or has already been removed.
+func finalizeDisconnect(player *game.Player, room *game.Room, registry service.RoomRegistryService) {
+	player.Mu.Lock()
+	reconnected := player.Conn != nil
+	if !reconnected {
+		player.DisconnectTimer = nil
+	}
+	player.Mu.Unlock()
+	if reconnected {
+		log.Printf("player %s reconnected within grace; skipping cleanup", player.ID)
+		return
+	}
+
+	if _, err := registry.GetPlayerInRoom(room.ID, player.ID); err != nil {
+		return
+	}
+
+	room.Mu.Lock()
+	var forfeit service.ForfeitResult
+	var turnMsg []byte
+	if room.Session != nil {
+		forfeit = service.ForfeitPlayer(room, player.ID)
+		if forfeit.TurnAdvanced && !forfeit.GameOver {
+			turnMsg = buildTurnMessage(room)
+		}
+	}
+	room.Mu.Unlock()
+
+	hostChanged, err := registry.RemovePlayerFromRoom(room.ID, player.ID)
+	if err != nil {
+		log.Printf("disconnect: RemovePlayerFromRoom failed for %s in %s: %v", player.ID, room.ID, err)
+	}
+
+	broadcastToRoom(room, game.NewPlayerLeftMessage(player.ID), uuid.Nil)
+	if hostChanged {
+		broadcastToRoom(room, game.NewHostChangedMessage(room.HostID), uuid.Nil)
+	}
+	if forfeit.GameOver {
+		broadcastToRoom(room, game.NewGameOverMessage(forfeit.WinnerID), uuid.Nil)
+	} else if turnMsg != nil {
+		broadcastToRoom(room, turnMsg, uuid.Nil)
+	}
+
+	log.Printf("player %s removed from room %s after grace", player.ID, room.ID)
 }
 
 // buildRoomState creates the room_state message sent to a player on connect.

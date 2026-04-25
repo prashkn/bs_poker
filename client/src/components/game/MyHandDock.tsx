@@ -96,6 +96,7 @@ export default function MyHandDock({
               <ClaimPopover
                 onClaim={onClaim}
                 disabled={false}
+                currentClaim={currentClaim}
                 triggerClassName="h-11 rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 triggerLabel="Claim →"
               />

@@ -62,6 +62,8 @@ export type ServerEventMap = {
   };
   player_joined: { player_id: string; name: string };
   player_left: { player_id: string };
+  player_kicked: { player_id: string };
+  kicked: Record<string, never>;
   player_disconnected: { player_id: string };
   player_reconnected: { player_id: string };
   host_changed: { player_id: string };

@@ -8,12 +8,12 @@ import (
 )
 
 // handleGetRoom checks if the room exists. If player_id query param is provided,
-// also verifies the player is in the room.
+// also verifies the player is in the room and not on the kick list.
 func handleGetRoom(registry service.RoomRegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roomID := r.PathValue("roomID")
 
-		_, err := registry.GetRoom(roomID)
+		room, err := registry.GetRoom(roomID)
 		if err != nil {
 			http.Error(w, "room not found", http.StatusNotFound)
 			return
@@ -27,6 +27,15 @@ func handleGetRoom(registry service.RoomRegistryService) http.HandlerFunc {
 				http.Error(w, "invalid player_id", http.StatusBadRequest)
 				return
 			}
+
+			room.Mu.Lock()
+			_, kicked := room.KickedIDs[playerID]
+			room.Mu.Unlock()
+			if kicked {
+				http.Error(w, "you have been kicked from this room", http.StatusForbidden)
+				return
+			}
+
 			_, err = registry.GetPlayerInRoom(roomID, playerID)
 			if err != nil {
 				http.Error(w, "player not found in room", http.StatusNotFound)
