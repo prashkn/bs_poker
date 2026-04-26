@@ -30,4 +30,4 @@ Start the backend first, then the frontend, and open the Vite URL in two browser
 
 ## Architecture
 
-See [WRITE_UP.md](./WRITE_UP.md) to understand what decisions were made and why — WebSocket pub/sub, event dispatch, FSM game flow, reconnection handling, and more.
+See [WRITEUP.md](./WRITEUP.md) to understand what decisions were made and why — WebSocket pub/sub, event dispatch, FSM game flow, reconnection handling, and more.
