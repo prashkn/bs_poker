@@ -17,17 +17,17 @@ const VALUE_LABELS: Record<number, string> = {
 export type PlayingCardSize = "xs" | "sm" | "md" | "lg";
 
 const DIMENSIONS: Record<PlayingCardSize, string> = {
-  xs: "h-10 w-7 text-[9px] rounded-[3px] p-0.5",
-  sm: "h-14 w-10 text-[11px] rounded-[4px] p-1",
-  md: "h-20 w-14 text-sm rounded-md p-1.5",
-  lg: "h-28 w-20 text-base rounded-lg p-2",
+  xs: "h-10 w-7 text-[6px] rounded-[3px] p-0.5",
+  sm: "h-14 w-10 text-[8px] rounded-[4px] p-1",
+  md: "h-20 w-14 text-[11px] rounded-md p-1.5",
+  lg: "h-28 w-20 text-sm rounded-lg p-2",
 };
 
 const CENTER_SIZE: Record<PlayingCardSize, string> = {
-  xs: "text-base",
-  sm: "text-lg",
-  md: "text-2xl",
-  lg: "text-3xl",
+  xs: "text-[10px]",
+  sm: "text-sm",
+  md: "text-xl",
+  lg: "text-2xl",
 };
 
 export function valueLabel(v: number): string {
@@ -58,7 +58,7 @@ export default function PlayingCard({
   const glyph = suitGlyph(card.suit);
   return (
     <div
-      className={`flex flex-col items-center justify-between bg-white shadow-sm border border-white/10 select-none ${DIMENSIONS[size]} ${tone} ${className}`}
+      className={`flex flex-col items-center justify-between overflow-hidden bg-white shadow-sm border border-white/10 select-none ${DIMENSIONS[size]} ${tone} ${className}`}
     >
       <div className="self-start leading-none font-semibold">
         <div>{label}</div>
