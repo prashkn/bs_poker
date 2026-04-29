@@ -2,6 +2,8 @@
 
 Multiplayer BS Poker web app. Go backend, React (Vite + TypeScript) frontend.
 
+https://github.com/user-attachments/assets/deee1c2a-ccf7-4506-9f47-3328ab8ce221
+
 ## Backend
 
 Requires Go 1.24+.
