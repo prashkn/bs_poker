@@ -294,30 +294,55 @@ npm run build
 # Caddy serves from dist/ directly; no restart needed.
 ```
 
-### Optional: deploy script
+### Auto-deploy (systemd timer, pull-based)
 
-`/srv/bs_poker/scripts/deploy.sh`:
+A systemd timer fetches `origin/main` every 5 hours and runs the deploy
+script if there are new commits. Pull-based so the Pi keeps zero inbound
+exposure — no webhook, no CI SSH key, no GitHub Actions runner.
+
+The repo ships three files for this under `scripts/`:
+
+- `scripts/deploy.sh` — fetches main; if nothing changed, exits silently;
+  otherwise fast-forwards, rebuilds server + client, and restarts the service.
+- `scripts/bs-poker-autodeploy.service` — oneshot unit that runs the script.
+- `scripts/bs-poker-autodeploy.timer` — fires 5 min after boot, every 5 hours.
+
+Install:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-cd /srv/bs_poker
-git pull --ff-only
-
-cd server
-go build -o /srv/bs_poker/bin/bs-poker-server .
-
-cd ../client
-npm ci --no-audit --no-fund
-npm run build
-
-sudo systemctl restart bs-poker
-echo "deploy complete"
+# Edit the service file's `User=<your-user>` to match your Pi login.
+sudo cp /srv/bs_poker/scripts/bs-poker-autodeploy.service /etc/systemd/system/
+sudo cp /srv/bs_poker/scripts/bs-poker-autodeploy.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bs-poker-autodeploy.timer
 ```
 
+The script calls `sudo systemctl restart bs-poker`, so the deploy user needs
+a passwordless sudo rule for just that command. Add via `sudo visudo`:
+
+```
+<your-user> ALL=(root) NOPASSWD: /bin/systemctl restart bs-poker
+```
+
+(Path may be `/usr/bin/systemctl` on some systems — check with `which systemctl`.)
+
+Verify:
+
 ```bash
-chmod +x /srv/bs_poker/scripts/deploy.sh
+systemctl list-timers bs-poker-autodeploy.timer
+journalctl -u bs-poker-autodeploy.service -n 50 -f
+```
+
+To force an immediate deploy without waiting for the timer:
+
+```bash
+sudo systemctl start bs-poker-autodeploy.service
+```
+
+To pause auto-deploys (e.g. during incident response):
+
+```bash
+sudo systemctl stop bs-poker-autodeploy.timer
 ```
 
 ## Verification

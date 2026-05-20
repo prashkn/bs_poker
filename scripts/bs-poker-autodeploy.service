@@ -1,0 +1,11 @@
+[Unit]
+Description=BS Poker auto-deploy (fetch main, rebuild, restart if changed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Replace
+User=<your-user>
+WorkingDirectory=/srv/bs_poker
+ExecStart=/srv/bs_poker/scripts/deploy.sh
