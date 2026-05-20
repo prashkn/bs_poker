@@ -1,5 +1,7 @@
 # BS Poker
 
+> Play at https://pokerbs.com/!
+
 Multiplayer BS Poker web app. Go backend, React (Vite + TypeScript) frontend.
 
 https://github.com/user-attachments/assets/deee1c2a-ccf7-4506-9f47-3328ab8ce221
