@@ -5,12 +5,12 @@ import RoomInfo from "@/components/RoomInfo";
 export default function Lobby() {
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="flex gap-4 w-full max-w-5xl h-[min(80vh,640px)]">
-        <div className="flex flex-col gap-4 w-72 shrink-0">
+      <div className="flex w-full max-w-5xl flex-col gap-4 md:h-[min(80vh,640px)] md:flex-row">
+        <div className="flex w-full flex-col gap-4 md:w-72 md:shrink-0">
           <RoomInfo />
           <PlayerList />
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="h-[60vh] min-w-0 md:h-auto md:flex-1">
           <Chat />
         </div>
       </div>
